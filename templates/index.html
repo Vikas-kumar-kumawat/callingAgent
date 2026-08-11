@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Customer Feedback Calling Agent</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<div class="app-shell">
+    <aside class="sidebar">
+        <a class="brand" href="/">
+            <span class="brand-mark">Feedback</span>
+            <span>
+                <strong>Feedback AI Agent</strong>
+                <small>Voice Calling Ops</small>
+            </span>
+        </a>
+
+        <nav class="nav-list">
+            <a class="nav-item active" href="/">
+                <span class="nav-icon">01</span> Dashboard
+            </a>
+            <a class="nav-item" href="#customers">
+                <span class="nav-icon">02</span> Customers
+            </a>
+            <a class="nav-item" href="#new-customer">
+                <span class="nav-icon">03</span> Add Customer
+            </a>
+        </nav>
+
+        <div class="sidebar-note">
+            <span class="note-label">Voice Engine</span>
+            <strong>Gemini Live + Twilio</strong>
+        </div>
+    </aside>
+
+    <main class="main-panel">
+        <header class="topbar">
+            <div>
+                <p class="eyebrow">Customer Operations</p>
+                <h1>Feedback Call Center</h1>
+            </div>
+
+            <div class="campaign-controls">
+                <span id="campaignStatus" class="campaign-status stopped">Stopped</span>
+                <button id="startCampaignBtn" class="btn success" type="button">Start Campaign</button>
+                <button id="stopCampaignBtn" class="btn danger" type="button">Stop</button>
+            </div>
+        </header>
+
+        <section class="stats-grid">
+            <article class="stat-card">
+                <span>Total Customers</span>
+                <strong id="totalCustomers">0</strong>
+            </article>
+            <article class="stat-card">
+                <span>Pending Calls</span>
+                <strong id="pendingCustomers">0</strong>
+            </article>
+            <article class="stat-card">
+                <span>Feedback Collected</span>
+                <strong id="completedCustomers">0</strong>
+            </article>
+            <article class="stat-card">
+                <span>Average Rating</span>
+                <strong id="averageRating">-</strong>
+            </article>
+        </section>
+
+        <section id="new-customer" class="workspace-section">
+            <div class="section-title">
+                <div>
+                    <h2>Add Customer</h2>
+                    <p>Queue a customer to receive an AI feedback call.</p>
+                </div>
+            </div>
+
+            <form id="customerForm" class="customer-form">
+                <label>
+                    <span>Name</span>
+                    <input id="customerName" name="name" type="text" placeholder="Customer Name" required>
+                </label>
+
+                <label>
+                    <span>Phone Number</span>
+                    <input id="customerPhone" name="phone" type="tel" placeholder="+919057262630" required>
+                </label>
+
+                <button id="addCustomerBtn" class="btn primary" type="submit">Add Customer</button>
+            </form>
+        </section>
+
+        <section id="customers" class="workspace-section">
+            <div class="section-title customer-toolbar">
+                <div>
+                    <h2>Customer Database</h2>
+                    <p>Track call progress and real-time customer feedback.</p>
+                </div>
+
+                <div class="toolbar-actions">
+                    <label class="search-box">
+                        <span class="sr-only">Search</span>
+                        <input id="customerSearch" type="search" placeholder="Search customer or phone">
+                    </label>
+
+                    <label class="select-box">
+                        <span class="sr-only">Filter</span>
+                        <select id="statusFilter">
+                            <option value="all">All Status</option>
+                            <option value="pending">Waiting</option>
+                            <option value="calling">Calling</option>
+                            <option value="completed">Completed</option>
+                            <option value="failed">Failed</option>
+                        </select>
+                    </label>
+
+                    <button id="refreshBtn" class="btn secondary icon-btn" type="button" title="Refresh">↻</button>
+                </div>
+            </div>
+
+            <div class="table-frame">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Customer</th>
+                            <th>Phone</th>
+                            <th>Status</th>
+                            <th>Rating</th>
+                            <th>Feedback Notes</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="customerTable">
+                        <tr>
+                            <td colspan="6" class="empty-cell">Loading customers...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+</div>
+
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
