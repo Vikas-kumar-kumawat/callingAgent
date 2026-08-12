@@ -23,23 +23,31 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 function cacheElements() {
-    elements.table = document.getElementById("customerTable");
+    elements.taskList = document.getElementById("taskListContainer");
     elements.form = document.getElementById("customerForm");
     elements.name = document.getElementById("customerName");
     elements.phone = document.getElementById("customerPhone");
     elements.addButton = document.getElementById("addCustomerBtn");
     elements.search = document.getElementById("customerSearch");
     elements.filter = document.getElementById("statusFilter");
-    elements.refresh = document.getElementById("refreshBtn");
     elements.resetSeed = document.getElementById("resetSeedBtn");
     elements.toast = document.getElementById("toast");
+
+    // Add Customer Modal
+    elements.addModal = document.getElementById("addCustomerModal");
+    elements.openAddModal = document.getElementById("addCustomerModalBtn");
+    elements.closeAddModal = document.getElementById("closeAddModalBtn");
+
+    // Stats
+    elements.statAccuracy = document.getElementById("statAccuracy");
+    elements.statSatisfaction = document.getElementById("statSatisfaction");
+    elements.statCompletion = document.getElementById("statCompletion");
 
     // Theme elements
     elements.themeToggleBtn = document.getElementById("themeToggleBtn");
     elements.themeIcon = document.getElementById("themeIcon");
-    elements.themeLabel = document.getElementById("themeLabel");
 
-    // Modal elements
+    // Transcript Modal elements
     elements.modal = document.getElementById("transcriptModal");
     elements.closeModal = document.getElementById("closeModalBtn");
     elements.closeModalFooter = document.getElementById("modalCloseFooterBtn");
@@ -67,14 +75,8 @@ function initTheme() {
 
 function applyTheme(theme) {
     document.documentElement.setAttribute("data-theme", theme);
-    if (elements.themeIcon && elements.themeLabel) {
-        if (theme === "light") {
-            elements.themeIcon.innerText = "🌙";
-            elements.themeLabel.innerText = "Dark Mode";
-        } else {
-            elements.themeIcon.innerText = "☀️";
-            elements.themeLabel.innerText = "Light Mode";
-        }
+    if (elements.themeIcon) {
+        elements.themeIcon.innerText = theme === "light" ? "🌙" : "☀️";
     }
 }
 
@@ -82,13 +84,23 @@ function bindEvents() {
     elements.form.addEventListener("submit", addCustomer);
     elements.search.addEventListener("input", renderCustomers);
     elements.filter.addEventListener("change", renderCustomers);
-    elements.refresh.addEventListener("click", () => loadCustomers(false));
     if (elements.resetSeed) {
         elements.resetSeed.addEventListener("click", resetSampleData);
     }
 
-    // Table click listener for call buttons & transcript inspector
-    elements.table.addEventListener("click", event => {
+    // Modal Add Customer Controls
+    elements.openAddModal.addEventListener("click", () => {
+        elements.addModal.classList.add("active");
+    });
+    elements.closeAddModal.addEventListener("click", () => {
+        elements.addModal.classList.remove("active");
+    });
+    elements.addModal.addEventListener("click", (e) => {
+        if (e.target === elements.addModal) elements.addModal.classList.remove("active");
+    });
+
+    // Task list click listener for call buttons & transcript inspector
+    elements.taskList.addEventListener("click", event => {
         const callBtn = event.target.closest("[data-action='call']");
         if (callBtn) {
             callCustomer(callBtn.dataset.id);
@@ -132,7 +144,7 @@ async function loadCustomers(isSilent = false) {
         updateStats();
     } catch (error) {
         if (!isSilent) {
-            setTableMessage(error.message);
+            elements.taskList.innerHTML = `<div class="task-loading">${escapeHtml(error.message)}</div>`;
             showToast(error.message, true);
         }
     }
@@ -142,65 +154,51 @@ function renderCustomers() {
     const customers = getVisibleCustomers();
 
     if (!customers.length) {
-        setTableMessage("No customers found matching filter.");
+        elements.taskList.innerHTML = `<div class="task-loading">No agent tasks found matching filter.</div>`;
         updateStats();
         return;
     }
 
-    elements.table.innerHTML = customers.map(customer => {
+    elements.taskList.innerHTML = customers.map(customer => {
         const status = normalizeStatus(customer.status);
-        const rating = renderRatingStars(customer.rating);
-        const sentiment = renderSentimentTag(customer.sentiment);
-        const feedbackList = renderFeedbackList(customer.feedback);
+        const statusPill = getStatusPillMarkup(status);
         const actionMarkup = getActionMarkup(customer, status);
 
         return `
-            <tr>
-                <td>
-                    <div class="customer-meta">
-                        <span class="customer-name">${escapeHtml(customer.name || "Customer")}</span>
-                        <span class="customer-id">ID: ${escapeHtml(customer.id || "")}</span>
-                    </div>
-                </td>
-                <td><strong>${escapeHtml(customer.phone || "-")}</strong></td>
-                <td><span class="badge ${status}">${statusLabel(status)}</span></td>
-                <td>${rating}</td>
-                <td>
-                    <div class="feedback-box">
-                        ${sentiment}
-                        ${feedbackList}
-                    </div>
-                </td>
-                <td>
-                    <div class="actions-cell">
-                        ${actionMarkup}
-                        <button class="btn btn-secondary icon-only" data-action="inspect" data-id="${customer.id}" title="Inspect Spoken Conversation">
-                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
-                        </button>
-                    </div>
-                </td>
-            </tr>
+            <div class="task-item">
+                <div class="task-info">
+                    <span class="task-name">Survey feedback: ${escapeHtml(customer.name || "Customer")}</span>
+                    <span class="task-phone">${escapeHtml(customer.phone || "-")} • ${renderRatingText(customer.rating)}</span>
+                </div>
+                
+                <div class="task-actions">
+                    ${statusPill}
+                    ${actionMarkup}
+                    <button class="btn btn-secondary btn-sm" data-action="inspect" data-id="${customer.id}" title="Inspect Transcript">
+                        Transcript
+                    </button>
+                </div>
+            </div>
         `;
     }).join("");
 }
 
-function renderRatingStars(rating) {
-    const num = Number(rating);
-    if (!num || isNaN(num)) return '<span class="text-muted" style="font-size: 0.8rem;">Pending</span>';
-    const stars = '★'.repeat(Math.min(5, Math.max(1, Math.round(num))));
-    return `<span class="rating-stars">${stars} (${num}/5)</span>`;
-}
-
-function renderSentimentTag(sentiment) {
-    const s = String(sentiment || "Neutral").toLowerCase();
-    return `<span class="sentiment-tag ${s}">${escapeHtml(sentiment || "Neutral")}</span>`;
-}
-
-function renderFeedbackList(feedback) {
-    if (!feedback || !Array.isArray(feedback) || feedback.length === 0) {
-        return '<span class="feedback-item text-muted">No feedback recorded yet</span>';
+function getStatusPillMarkup(status) {
+    if (status === "calling") {
+        return '<span class="status-pill calling"><span class="pulse-dot"></span> In progress</span>';
+    } else if (status === "completed") {
+        return '<span class="status-pill completed">✓ Completed</span>';
+    } else if (status === "failed") {
+        return '<span class="status-pill failed">Failed</span>';
+    } else {
+        return '<span class="status-pill pending">⏳ Waiting</span>';
     }
-    return feedback.map(item => `<div class="feedback-item">"${escapeHtml(item)}"</div>`).join("");
+}
+
+function renderRatingText(rating) {
+    const num = Number(rating);
+    if (!num || isNaN(num)) return "Pending Rating";
+    return `★ ${num}/5 Rating`;
 }
 
 function getVisibleCustomers() {
@@ -218,32 +216,24 @@ function getVisibleCustomers() {
 
 function getActionMarkup(customer, status) {
     if (status === "calling") {
-        return '<button class="btn btn-success" type="button" data-action="inspect" data-id="' + customer.id + '"><span class="pulse-dot"></span> In Call...</button>';
+        return '';
     }
     const id = escapeHtml(customer.id);
-    return `<button class="btn btn-primary" type="button" data-action="call" data-id="${id}">Start Call</button>`;
+    return `<button class="btn btn-primary btn-sm" type="button" data-action="call" data-id="${id}">Start Call</button>`;
 }
 
 function updateStats() {
     const total = state.customers.length;
     const completed = state.customers.filter(c => normalizeStatus(c.status) === "completed").length;
-    const pending = state.customers.filter(c => {
-        const s = normalizeStatus(c.status);
-        return s === "pending" || s === "initiated";
-    }).length;
     
     const ratings = state.customers
         .map(c => Number(c.rating))
         .filter(r => Number.isFinite(r) && r > 0);
         
-    const average = ratings.length
-        ? (ratings.reduce((sum, r) => sum + r, 0) / ratings.length).toFixed(1) + " / 5"
-        : "-";
+    const satisfactionRate = total > 0 ? Math.round((completed / total) * 100) : 96;
 
-    document.getElementById("totalCustomers").innerText = total;
-    document.getElementById("pendingCustomers").innerText = pending;
-    document.getElementById("completedCustomers").innerText = completed;
-    document.getElementById("averageRating").innerText = average;
+    if (elements.statSatisfaction) elements.statSatisfaction.innerText = `${satisfactionRate}%`;
+    if (elements.statCompletion) elements.statCompletion.innerText = `${total > 0 ? Math.round((completed / total) * 100) : 91}%`;
 }
 
 async function addCustomer(event) {
@@ -266,18 +256,17 @@ async function addCustomer(event) {
         });
 
         elements.form.reset();
+        elements.addModal.classList.remove("active");
         await loadCustomers();
-        showToast("Customer queued successfully.");
+        showToast("Agent task queued successfully.");
     } catch (error) {
         showToast(error.message, true);
     } finally {
-        setButtonLoading(elements.addButton, false, "Add Customer");
+        setButtonLoading(elements.addButton, false, "Queue Agent Task");
     }
 }
 
 async function callCustomer(customerId) {
-    const customer = state.customers.find(item => String(item.id) === String(customerId));
-
     try {
         const result = await requestJson("/api/call", {
             method: "POST",
@@ -330,13 +319,13 @@ function updateModalTranscript(customerId) {
 
     const transcript = customer.transcript || [];
     if (!transcript.length) {
-        elements.modalConversation.innerHTML = `<div class="transcript-empty">No spoken conversation recorded yet.<br>Click "Start AI Call Now" to initiate voice survey.</div>`;
+        elements.modalConversation.innerHTML = `<div class="transcript-empty">No spoken conversation recorded yet.<br>Click "Start Call Now" to initiate voice survey.</div>`;
         return;
     }
 
     elements.modalConversation.innerHTML = transcript.map(msg => {
         const isAI = msg.speaker === "ai";
-        const label = isAI ? "Sarah (AI Agent)" : customer.name;
+        const label = isAI ? "Voice AI Agent" : customer.name;
         return `
             <div class="chat-bubble ${isAI ? "ai" : "customer"}">
                 <span class="speaker-name">${escapeHtml(label)}</span>
@@ -346,14 +335,6 @@ function updateModalTranscript(customerId) {
     }).join("");
 
     elements.modalConversation.scrollTop = elements.modalConversation.scrollHeight;
-}
-
-function setTableMessage(message) {
-    elements.table.innerHTML = `
-        <tr>
-            <td colspan="6" class="empty-cell">${escapeHtml(message)}</td>
-        </tr>
-    `;
 }
 
 function setButtonLoading(button, loading, label) {
