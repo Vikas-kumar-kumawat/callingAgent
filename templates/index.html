@@ -1,5 +1,5 @@
 ﻿<!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -24,9 +24,16 @@
             </div>
         </div>
 
-        <div class="header-status">
-            <span class="pulse-dot active"></span>
-            <span class="engine-tag">Voice Engine: Sarah (Gemini AI)</span>
+        <div class="header-actions">
+            <div class="header-status">
+                <span class="pulse-dot active"></span>
+                <span class="engine-tag">Voice Engine: Sarah (Gemini AI)</span>
+            </div>
+
+            <button id="themeToggleBtn" class="btn btn-secondary theme-btn" type="button" title="Toggle Light / Dark Mode">
+                <span id="themeIcon">☀️</span>
+                <span id="themeLabel">Light Mode</span>
+            </button>
         </div>
     </header>
 

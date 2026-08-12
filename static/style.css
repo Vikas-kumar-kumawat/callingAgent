@@ -27,6 +27,24 @@
     --shadow-soft: 0 12px 35px -10px rgba(0, 0, 0, 0.6);
 }
 
+/* Light Theme Overrides */
+html[data-theme="light"] {
+    --bg-main: #f1f5f9;
+    --bg-card: rgba(255, 255, 255, 0.95);
+    --bg-surface: #ffffff;
+    --border-color: #cbd5e1;
+    --border-highlight: rgba(2, 132, 199, 0.35);
+    
+    --text-primary: #0f172a;
+    --text-secondary: #475569;
+    --text-muted: #64748b;
+    
+    --primary: #0284c7;
+    --primary-hover: #0369a1;
+    
+    --shadow-soft: 0 10px 30px -10px rgba(15, 23, 42, 0.08);
+}
+
 * {
     box-sizing: border-box;
     margin: 0;
@@ -39,6 +57,7 @@ body {
     color: var(--text-primary);
     min-height: 100vh;
     overflow-x: hidden;
+    transition: background-color 0.3s ease, color 0.3s ease;
     background-image: 
         radial-gradient(circle at 12% 12%, rgba(56, 189, 248, 0.08) 0%, transparent 45%),
         radial-gradient(circle at 88% 88%, rgba(192, 132, 252, 0.06) 0%, transparent 45%);
@@ -49,7 +68,7 @@ button, input, select {
     font-size: inherit;
 }
 
-/* App Container Layout with Generous Spacing */
+/* App Container Layout */
 .app-layout {
     max-width: 1320px;
     margin: 0 auto;
@@ -70,6 +89,7 @@ button, input, select {
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-soft);
     backdrop-filter: blur(16px);
+    transition: background-color 0.3s ease, border-color 0.3s ease;
 }
 
 .brand-block {
@@ -103,20 +123,51 @@ button, input, select {
     margin-top: 2px;
 }
 
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
 .header-status {
     display: flex;
     align-items: center;
     gap: 10px;
-    background: rgba(255, 255, 255, 0.04);
+    background: rgba(0, 0, 0, 0.05);
     border: 1px solid var(--border-color);
     padding: 10px 18px;
     border-radius: 30px;
+}
+
+html[data-theme="dark"] .header-status {
+    background: rgba(255, 255, 255, 0.04);
 }
 
 .engine-tag {
     font-size: 0.84rem;
     font-weight: 600;
     color: var(--accent-green);
+}
+
+/* Theme Toggle Button */
+.theme-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    padding: 9px 16px;
+    border-radius: 30px;
+    cursor: pointer;
+    color: var(--text-primary);
+    font-weight: 600;
+    font-size: 0.84rem;
+    transition: all 0.2s ease;
+}
+
+.theme-btn:hover {
+    border-color: var(--primary);
+    transform: translateY(-1px);
 }
 
 /* Pulse Dot */
@@ -158,7 +209,7 @@ button, input, select {
     align-items: center;
     gap: 18px;
     box-shadow: var(--shadow-soft);
-    transition: transform 0.2s ease, border-color 0.2s ease;
+    transition: transform 0.2s ease, border-color 0.2s ease, background-color 0.3s ease;
     backdrop-filter: blur(12px);
 }
 
@@ -194,7 +245,7 @@ button, input, select {
     margin-top: 2px;
 }
 
-/* Panel Sections with Spacious Padding */
+/* Panel Sections */
 .panel-card {
     background: var(--bg-card);
     border: 1px solid var(--border-color);
@@ -202,6 +253,7 @@ button, input, select {
     padding: 32px 36px;
     box-shadow: var(--shadow-soft);
     backdrop-filter: blur(16px);
+    transition: background-color 0.3s ease, border-color 0.3s ease;
 }
 
 .panel-title-bar h2, .panel-header-toolbar h2 {
@@ -216,7 +268,7 @@ button, input, select {
     margin-top: 4px;
 }
 
-/* Add Customer Form Grid */
+/* Form Inputs */
 .simple-form {
     display: grid;
     grid-template-columns: 1fr 1fr auto;
@@ -238,7 +290,7 @@ button, input, select {
 }
 
 .form-input-group input {
-    background: rgba(255, 255, 255, 0.04);
+    background: var(--bg-surface);
     border: 1px solid var(--border-color);
     padding: 12px 16px;
     border-radius: var(--radius-sm);
@@ -272,7 +324,7 @@ button, input, select {
     display: flex;
     align-items: center;
     gap: 10px;
-    background: rgba(255, 255, 255, 0.04);
+    background: var(--bg-surface);
     border: 1px solid var(--border-color);
     padding: 10px 14px;
     border-radius: var(--radius-sm);
@@ -289,7 +341,7 @@ button, input, select {
 }
 
 .select-filter {
-    background: rgba(255, 255, 255, 0.04);
+    background: var(--bg-surface);
     border: 1px solid var(--border-color);
     color: var(--text-primary);
     padding: 10px 14px;
@@ -303,7 +355,7 @@ button, input, select {
     color: var(--text-primary);
 }
 
-/* Expanded Data Table */
+/* Data Table */
 .table-frame {
     overflow-x: auto;
     border-radius: var(--radius-md);
@@ -318,7 +370,7 @@ button, input, select {
 }
 
 .data-table th {
-    background: rgba(255, 255, 255, 0.03);
+    background: rgba(0, 0, 0, 0.04);
     padding: 16px 20px;
     font-weight: 600;
     color: var(--text-secondary);
@@ -328,6 +380,10 @@ button, input, select {
     letter-spacing: 0.5px;
 }
 
+html[data-theme="dark"] .data-table th {
+    background: rgba(255, 255, 255, 0.03);
+}
+
 .data-table td {
     padding: 20px;
     border-bottom: 1px solid var(--border-color);
@@ -335,6 +391,10 @@ button, input, select {
 }
 
 .data-table tbody tr:hover {
+    background: rgba(0, 0, 0, 0.02);
+}
+
+html[data-theme="dark"] .data-table tbody tr:hover {
     background: rgba(255, 255, 255, 0.02);
 }
 
@@ -355,7 +415,7 @@ button, input, select {
     color: var(--text-muted);
 }
 
-/* Badges & Sentiment */
+/* Badges & Ratings */
 .badge {
     display: inline-flex;
     align-items: center;
@@ -370,16 +430,6 @@ button, input, select {
 .badge.calling { background: rgba(251, 191, 36, 0.15); color: var(--accent-yellow); }
 .badge.completed { background: rgba(52, 211, 153, 0.15); color: var(--accent-green); }
 .badge.failed { background: rgba(248, 113, 113, 0.15); color: var(--accent-red); }
-
-.badge.calling::before {
-    content: '';
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background-color: var(--accent-yellow);
-    box-shadow: 0 0 8px var(--accent-yellow);
-    animation: pulse 1.5s infinite;
-}
 
 .sentiment-tag {
     font-size: 0.74rem;
@@ -411,10 +461,14 @@ button, input, select {
     font-size: 0.85rem;
     color: var(--text-primary);
     line-height: 1.45;
-    background: rgba(255, 255, 255, 0.02);
+    background: rgba(0, 0, 0, 0.03);
     padding: 6px 10px;
     border-radius: 6px;
-    border-left: 2px solid var(--primary);
+    border-left: 3px solid var(--primary);
+}
+
+html[data-theme="dark"] .feedback-item {
+    background: rgba(255, 255, 255, 0.03);
 }
 
 .actions-cell {
@@ -439,8 +493,8 @@ button, input, select {
 
 .btn-primary {
     background: var(--primary);
-    color: #090d16;
-    box-shadow: 0 4px 15px rgba(56, 189, 248, 0.25);
+    color: #ffffff;
+    box-shadow: 0 4px 15px rgba(2, 132, 199, 0.25);
 }
 
 .btn-primary:hover {
@@ -449,13 +503,13 @@ button, input, select {
 }
 
 .btn-secondary {
-    background: rgba(255, 255, 255, 0.05);
+    background: var(--bg-surface);
     color: var(--text-primary);
     border: 1px solid var(--border-color);
 }
 
 .btn-secondary:hover {
-    background: rgba(255, 255, 255, 0.1);
+    border-color: var(--primary);
 }
 
 .btn-outline {
@@ -478,7 +532,7 @@ button, input, select {
 .modal-overlay {
     position: fixed;
     top: 0; left: 0; right: 0; bottom: 0;
-    background: rgba(0, 0, 0, 0.78);
+    background: rgba(0, 0, 0, 0.75);
     backdrop-filter: blur(8px);
     display: flex;
     align-items: center;
@@ -495,7 +549,7 @@ button, input, select {
 }
 
 .modal-card {
-    background: #0f172a;
+    background: var(--bg-surface);
     border: 1px solid var(--border-color);
     width: 92%;
     max-width: 650px;
@@ -547,13 +601,17 @@ button, input, select {
 }
 
 .call-banner {
-    background: rgba(255, 255, 255, 0.03);
+    background: rgba(0, 0, 0, 0.03);
     border: 1px solid var(--border-color);
     padding: 14px 18px;
     border-radius: var(--radius-md);
     display: flex;
     justify-content: space-between;
     align-items: center;
+}
+
+html[data-theme="dark"] .call-banner {
+    background: rgba(255, 255, 255, 0.03);
 }
 
 .call-status-indicator {
@@ -563,30 +621,6 @@ button, input, select {
     font-size: 0.88rem;
     font-weight: 600;
     color: var(--accent-green);
-}
-
-.waveform {
-    display: flex;
-    align-items: center;
-    gap: 3px;
-    height: 16px;
-}
-
-.waveform span {
-    width: 3px;
-    height: 100%;
-    background: var(--accent-green);
-    border-radius: 3px;
-    animation: wave 1.2s infinite ease-in-out;
-}
-
-.waveform span:nth-child(2) { animation-delay: 0.2s; }
-.waveform span:nth-child(3) { animation-delay: 0.4s; }
-.waveform span:nth-child(4) { animation-delay: 0.6s; }
-
-@keyframes wave {
-    0%, 100% { height: 4px; }
-    50% { height: 16px; }
 }
 
 .transcript-box {
@@ -642,7 +676,7 @@ button, input, select {
     display: flex;
     justify-content: flex-end;
     gap: 12px;
-    background: rgba(0, 0, 0, 0.2);
+    background: rgba(0, 0, 0, 0.05);
 }
 
 /* Toast */
