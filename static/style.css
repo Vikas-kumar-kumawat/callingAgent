@@ -57,10 +57,7 @@ body {
     min-height: 100vh;
     overflow-x: hidden;
     transition: background-color 0.3s ease, color 0.3s ease;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    padding: 30px 20px;
+    padding: 32px 24px;
 }
 
 button, input, select {
@@ -68,13 +65,14 @@ button, input, select {
     font-size: inherit;
 }
 
-/* App Container Layout */
+/* App Main Container */
 .agent-dashboard-container {
     width: 100%;
     max-width: 1380px;
+    margin: 0 auto;
     display: flex;
     flex-direction: column;
-    gap: 24px;
+    gap: 32px;
 }
 
 /* Top Floating Header */
@@ -82,7 +80,7 @@ button, input, select {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 12px 24px;
+    padding: 14px 28px;
     background: var(--bg-card);
     border: 1px solid var(--border-color);
     border-radius: 40px;
@@ -97,7 +95,7 @@ button, input, select {
 
 .brand-text {
     font-family: var(--font-heading);
-    font-size: 0.85rem;
+    font-size: 0.88rem;
     font-weight: 700;
     letter-spacing: 1.5px;
     color: var(--text-secondary);
@@ -143,7 +141,15 @@ button, input, select {
     100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(56, 189, 248, 0); }
 }
 
-/* 3-COLUMN FUTURISTIC LAYOUT (MATCHING USER SCREENSHOT) */
+/* Main Vertical Scroll Layout */
+.main-scroll-layout {
+    display: flex;
+    flex-direction: column;
+    gap: 32px;
+    width: 100%;
+}
+
+/* 3-COLUMN TOP HERO OVERVIEW (Matching Screenshot) */
 .grid-three-column {
     display: grid;
     grid-template-columns: 1fr 340px 1.15fr;
@@ -151,7 +157,7 @@ button, input, select {
     align-items: center;
 }
 
-/* Card Panel Base (Squircle rounded like screenshot) */
+/* Card Panel Base */
 .card-panel {
     background: var(--bg-card);
     border: 1px solid var(--border-color);
@@ -159,26 +165,12 @@ button, input, select {
     padding: 32px;
     backdrop-filter: blur(20px);
     box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
-    min-height: 520px;
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-}
-
-/* LEFT PANEL: Agent Tasks */
-.tasks-panel {
-    gap: 20px;
-}
-
-.panel-head {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
+    transition: background-color 0.3s ease, border-color 0.3s ease;
 }
 
 .panel-title {
     font-family: var(--font-heading);
-    font-size: 1.6rem;
+    font-size: 1.45rem;
     font-weight: 700;
     letter-spacing: -0.5px;
 }
@@ -186,132 +178,43 @@ button, input, select {
 .panel-subtitle {
     font-size: 0.84rem;
     color: var(--text-muted);
+    margin-top: 2px;
 }
 
-.tasks-toolbar {
-    display: flex;
-    gap: 10px;
-    margin-top: 8px;
-}
-
-.search-wrap {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid var(--border-color);
-    padding: 8px 12px;
-    border-radius: var(--radius-sm);
-    color: var(--text-muted);
-}
-
-.search-wrap input {
-    background: transparent;
-    border: none;
-    outline: none;
-    color: var(--text-primary);
-    font-size: 0.82rem;
-    width: 100%;
-}
-
-.mini-select {
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid var(--border-color);
-    color: var(--text-secondary);
-    padding: 8px 12px;
-    border-radius: var(--radius-sm);
-    outline: none;
-    font-size: 0.8rem;
-    cursor: pointer;
-}
-
-.mini-select option {
-    background: var(--bg-surface);
-}
-
-/* Task List Rows */
-.task-list {
+/* Hero Summary Card */
+.hero-summary-card {
+    min-height: 380px;
     display: flex;
     flex-direction: column;
-    gap: 12px;
-    flex: 1;
-    overflow-y: auto;
-    max-height: 380px;
-    padding-right: 4px;
+    justify-content: space-between;
 }
 
-.task-item {
+.hero-kpi-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    margin-top: 20px;
+}
+
+.hero-kpi-item {
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid var(--border-color);
+    padding: 16px;
+    border-radius: var(--radius-inner);
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 14px 16px;
-    border-bottom: 1px solid var(--border-color);
-    border-radius: var(--radius-sm);
-    transition: background-color 0.2s ease;
 }
 
-.task-item:hover {
-    background: rgba(255, 255, 255, 0.03);
+.kpi-mini-label {
+    font-size: 0.82rem;
+    color: var(--text-secondary);
 }
 
-.task-info {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-}
-
-.task-name {
-    font-size: 0.92rem;
-    font-weight: 500;
-    color: var(--text-primary);
-}
-
-.task-phone {
-    font-size: 0.78rem;
-    color: var(--text-muted);
-}
-
-.task-actions {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
-
-/* Status Pill Badges (Matching Screenshot) */
-.status-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 4px 12px;
-    border-radius: 20px;
-    font-size: 0.76rem;
-    font-weight: 500;
-    border: 1px solid transparent;
-}
-
-.status-pill.calling {
-    background: rgba(56, 189, 248, 0.1);
-    color: var(--accent-blue);
-    border-color: rgba(56, 189, 248, 0.3);
-}
-
-.status-pill.completed {
-    background: rgba(16, 185, 129, 0.1);
-    color: var(--accent-green);
-    border-color: rgba(16, 185, 129, 0.3);
-}
-
-.status-pill.pending {
-    background: rgba(245, 158, 11, 0.1);
-    color: var(--accent-amber);
-    border-color: rgba(245, 158, 11, 0.3);
-}
-
-.status-pill.failed {
-    background: rgba(236, 72, 153, 0.1);
-    color: var(--accent-pink);
-    border-color: rgba(236, 72, 153, 0.3);
+.kpi-mini-val {
+    font-family: var(--font-heading);
+    font-size: 1.4rem;
+    font-weight: 700;
 }
 
 /* CENTER HERO CARD: 3D Organic Fluid Orb */
@@ -369,7 +272,11 @@ button, input, select {
 
 /* RIGHT PANEL: Voice AI Agent Analytics */
 .agent-panel {
-    gap: 24px;
+    min-height: 380px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 20px;
 }
 
 .agent-profile-header {
@@ -379,8 +286,8 @@ button, input, select {
 }
 
 .agent-avatar-wrap {
-    width: 44px;
-    height: 44px;
+    width: 42px;
+    height: 42px;
     border-radius: 50%;
     border: 2px solid var(--primary);
     overflow: hidden;
@@ -395,7 +302,7 @@ button, input, select {
 
 .agent-title {
     font-family: var(--font-heading);
-    font-size: 1.4rem;
+    font-size: 1.35rem;
     font-weight: 700;
 }
 
@@ -403,7 +310,7 @@ button, input, select {
     font-size: 0.76rem;
     color: var(--text-muted);
     display: block;
-    margin-bottom: 10px;
+    margin-bottom: 8px;
     letter-spacing: 0.5px;
 }
 
@@ -436,14 +343,14 @@ button, input, select {
 .stats-split {
     display: grid;
     grid-template-columns: 1.3fr 1fr;
-    gap: 16px;
+    gap: 14px;
 }
 
 .accuracy-card {
     background: rgba(0, 0, 0, 0.2);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-inner);
-    padding: 16px;
+    padding: 14px;
     display: flex;
     flex-direction: column;
     justify-content: space-between;
@@ -458,12 +365,12 @@ button, input, select {
     display: flex;
     align-items: baseline;
     gap: 8px;
-    margin-top: 6px;
+    margin-top: 4px;
 }
 
 .acc-value {
     font-family: var(--font-heading);
-    font-size: 2.1rem;
+    font-size: 1.9rem;
     font-weight: 700;
 }
 
@@ -474,8 +381,8 @@ button, input, select {
 }
 
 .sparkline-container {
-    height: 50px;
-    margin-top: 10px;
+    height: 40px;
+    margin-top: 6px;
 }
 
 .sparkline-svg {
@@ -486,14 +393,14 @@ button, input, select {
 .stacked-kpis {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 10px;
 }
 
 .mini-kpi-card {
     background: rgba(0, 0, 0, 0.2);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-inner);
-    padding: 12px 16px;
+    padding: 10px 14px;
     display: flex;
     flex-direction: column;
     justify-content: center;
@@ -506,9 +413,195 @@ button, input, select {
 
 .kpi-val {
     font-family: var(--font-heading);
-    font-size: 1.3rem;
+    font-size: 1.2rem;
     font-weight: 700;
-    margin-top: 4px;
+    margin-top: 2px;
+}
+
+/* LOWER SECTION: FULL WIDTH AGENT TASKS CARD */
+.full-width-task-card {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+
+.panel-header-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 20px;
+    flex-wrap: wrap;
+}
+
+.toolbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.search-box {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    padding: 10px 14px;
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+}
+
+.search-box input {
+    background: transparent;
+    border: none;
+    color: var(--text-primary);
+    outline: none;
+    font-size: 0.88rem;
+    min-width: 240px;
+}
+
+.select-filter {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    padding: 10px 14px;
+    border-radius: var(--radius-sm);
+    outline: none;
+    cursor: pointer;
+}
+
+.select-filter option {
+    background: var(--bg-surface);
+    color: var(--text-primary);
+}
+
+/* Data Table */
+.table-frame {
+    overflow-x: auto;
+    border-radius: var(--radius-inner);
+    border: 1px solid var(--border-color);
+}
+
+.data-table {
+    width: 100%;
+    border-collapse: collapse;
+    text-align: left;
+    font-size: 0.9rem;
+}
+
+.data-table th {
+    background: rgba(0, 0, 0, 0.1);
+    padding: 16px 20px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    border-bottom: 1px solid var(--border-color);
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.data-table td {
+    padding: 18px 20px;
+    border-bottom: 1px solid var(--border-color);
+    vertical-align: middle;
+}
+
+.data-table tbody tr:hover {
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.customer-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.customer-name {
+    font-weight: 600;
+    color: var(--text-primary);
+    font-size: 0.94rem;
+}
+
+.customer-id {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+/* Status Pills */
+.status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    border-radius: 20px;
+    font-size: 0.78rem;
+    font-weight: 500;
+    border: 1px solid transparent;
+}
+
+.status-pill.calling {
+    background: rgba(56, 189, 248, 0.1);
+    color: var(--accent-blue);
+    border-color: rgba(56, 189, 248, 0.3);
+}
+
+.status-pill.completed {
+    background: rgba(16, 185, 129, 0.1);
+    color: var(--accent-green);
+    border-color: rgba(16, 185, 129, 0.3);
+}
+
+.status-pill.pending {
+    background: rgba(245, 158, 11, 0.1);
+    color: var(--accent-amber);
+    border-color: rgba(245, 158, 11, 0.3);
+}
+
+.status-pill.failed {
+    background: rgba(236, 72, 153, 0.1);
+    color: var(--accent-pink);
+    border-color: rgba(236, 72, 153, 0.3);
+}
+
+.sentiment-tag {
+    font-size: 0.74rem;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-weight: 600;
+    margin-bottom: 6px;
+    display: inline-block;
+}
+.sentiment-tag.positive { background: rgba(16, 185, 129, 0.2); color: var(--accent-green); }
+.sentiment-tag.negative { background: rgba(236, 72, 153, 0.2); color: var(--accent-pink); }
+.sentiment-tag.neutral { background: rgba(148, 163, 184, 0.2); color: var(--text-secondary); }
+
+.rating-stars {
+    color: var(--accent-amber);
+    font-weight: 700;
+    font-size: 0.92rem;
+}
+
+.feedback-box {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-width: 360px;
+}
+
+.feedback-item {
+    font-size: 0.85rem;
+    color: var(--text-primary);
+    line-height: 1.45;
+    background: rgba(255, 255, 255, 0.03);
+    padding: 6px 10px;
+    border-radius: 6px;
+    border-left: 3px solid var(--primary);
+}
+
+.actions-cell {
+    display: flex;
+    align-items: center;
+    gap: 10px;
 }
 
 /* Buttons */
@@ -560,6 +653,10 @@ button, input, select {
 .btn-sm {
     padding: 6px 12px;
     font-size: 0.78rem;
+}
+
+.btn.icon-only {
+    padding: 10px;
 }
 
 /* Modals */

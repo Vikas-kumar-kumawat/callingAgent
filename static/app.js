@@ -23,13 +23,14 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 function cacheElements() {
-    elements.taskList = document.getElementById("taskListContainer");
+    elements.table = document.getElementById("customerTable");
     elements.form = document.getElementById("customerForm");
     elements.name = document.getElementById("customerName");
     elements.phone = document.getElementById("customerPhone");
     elements.addButton = document.getElementById("addCustomerBtn");
     elements.search = document.getElementById("customerSearch");
     elements.filter = document.getElementById("statusFilter");
+    elements.refresh = document.getElementById("refreshBtn");
     elements.resetSeed = document.getElementById("resetSeedBtn");
     elements.toast = document.getElementById("toast");
 
@@ -38,7 +39,10 @@ function cacheElements() {
     elements.openAddModal = document.getElementById("addCustomerModalBtn");
     elements.closeAddModal = document.getElementById("closeAddModalBtn");
 
-    // Stats
+    // Summary Stats
+    elements.totalCustomers = document.getElementById("totalCustomers");
+    elements.pendingCustomers = document.getElementById("pendingCustomers");
+    elements.completedCustomers = document.getElementById("completedCustomers");
     elements.statAccuracy = document.getElementById("statAccuracy");
     elements.statSatisfaction = document.getElementById("statSatisfaction");
     elements.statCompletion = document.getElementById("statCompletion");
@@ -84,23 +88,32 @@ function bindEvents() {
     elements.form.addEventListener("submit", addCustomer);
     elements.search.addEventListener("input", renderCustomers);
     elements.filter.addEventListener("change", renderCustomers);
+    if (elements.refresh) {
+        elements.refresh.addEventListener("click", () => loadCustomers(false));
+    }
     if (elements.resetSeed) {
         elements.resetSeed.addEventListener("click", resetSampleData);
     }
 
     // Modal Add Customer Controls
-    elements.openAddModal.addEventListener("click", () => {
-        elements.addModal.classList.add("active");
-    });
-    elements.closeAddModal.addEventListener("click", () => {
-        elements.addModal.classList.remove("active");
-    });
-    elements.addModal.addEventListener("click", (e) => {
-        if (e.target === elements.addModal) elements.addModal.classList.remove("active");
-    });
+    if (elements.openAddModal) {
+        elements.openAddModal.addEventListener("click", () => {
+            elements.addModal.classList.add("active");
+        });
+    }
+    if (elements.closeAddModal) {
+        elements.closeAddModal.addEventListener("click", () => {
+            elements.addModal.classList.remove("active");
+        });
+    }
+    if (elements.addModal) {
+        elements.addModal.addEventListener("click", (e) => {
+            if (e.target === elements.addModal) elements.addModal.classList.remove("active");
+        });
+    }
 
-    // Task list click listener for call buttons & transcript inspector
-    elements.taskList.addEventListener("click", event => {
+    // Table click listener for call buttons & transcript inspector
+    elements.table.addEventListener("click", event => {
         const callBtn = event.target.closest("[data-action='call']");
         if (callBtn) {
             callCustomer(callBtn.dataset.id);
@@ -144,7 +157,7 @@ async function loadCustomers(isSilent = false) {
         updateStats();
     } catch (error) {
         if (!isSilent) {
-            elements.taskList.innerHTML = `<div class="task-loading">${escapeHtml(error.message)}</div>`;
+            setTableMessage(error.message);
             showToast(error.message, true);
         }
     }
@@ -154,31 +167,45 @@ function renderCustomers() {
     const customers = getVisibleCustomers();
 
     if (!customers.length) {
-        elements.taskList.innerHTML = `<div class="task-loading">No agent tasks found matching filter.</div>`;
+        setTableMessage("No agent tasks found matching filter.");
         updateStats();
         return;
     }
 
-    elements.taskList.innerHTML = customers.map(customer => {
+    elements.table.innerHTML = customers.map(customer => {
         const status = normalizeStatus(customer.status);
         const statusPill = getStatusPillMarkup(status);
+        const rating = renderRatingStars(customer.rating);
+        const sentiment = renderSentimentTag(customer.sentiment);
+        const feedbackList = renderFeedbackList(customer.feedback);
         const actionMarkup = getActionMarkup(customer, status);
 
         return `
-            <div class="task-item">
-                <div class="task-info">
-                    <span class="task-name">Survey feedback: ${escapeHtml(customer.name || "Customer")}</span>
-                    <span class="task-phone">${escapeHtml(customer.phone || "-")} • ${renderRatingText(customer.rating)}</span>
-                </div>
-                
-                <div class="task-actions">
-                    ${statusPill}
-                    ${actionMarkup}
-                    <button class="btn btn-secondary btn-sm" data-action="inspect" data-id="${customer.id}" title="Inspect Transcript">
-                        Transcript
-                    </button>
-                </div>
-            </div>
+            <tr>
+                <td>
+                    <div class="customer-meta">
+                        <span class="customer-name">Survey: ${escapeHtml(customer.name || "Customer")}</span>
+                        <span class="customer-id">Task ID: ${escapeHtml(customer.id || "")}</span>
+                    </div>
+                </td>
+                <td><strong>${escapeHtml(customer.phone || "-")}</strong></td>
+                <td>${statusPill}</td>
+                <td>${rating}</td>
+                <td>
+                    <div class="feedback-box">
+                        ${sentiment}
+                        ${feedbackList}
+                    </div>
+                </td>
+                <td>
+                    <div class="actions-cell">
+                        ${actionMarkup}
+                        <button class="btn btn-secondary btn-sm icon-only" data-action="inspect" data-id="${customer.id}" title="Inspect Spoken Conversation">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+                        </button>
+                    </div>
+                </td>
+            </tr>
         `;
     }).join("");
 }
@@ -195,10 +222,23 @@ function getStatusPillMarkup(status) {
     }
 }
 
-function renderRatingText(rating) {
+function renderRatingStars(rating) {
     const num = Number(rating);
-    if (!num || isNaN(num)) return "Pending Rating";
-    return `★ ${num}/5 Rating`;
+    if (!num || isNaN(num)) return '<span class="text-muted" style="font-size: 0.8rem;">Pending Rating</span>';
+    const stars = '★'.repeat(Math.min(5, Math.max(1, Math.round(num))));
+    return `<span class="rating-stars">${stars} (${num}/5)</span>`;
+}
+
+function renderSentimentTag(sentiment) {
+    const s = String(sentiment || "Neutral").toLowerCase();
+    return `<span class="sentiment-tag ${s}">${escapeHtml(sentiment || "Neutral")}</span>`;
+}
+
+function renderFeedbackList(feedback) {
+    if (!feedback || !Array.isArray(feedback) || feedback.length === 0) {
+        return '<span class="feedback-item text-muted">No spoken feedback recorded yet</span>';
+    }
+    return feedback.map(item => `<div class="feedback-item">"${escapeHtml(item)}"</div>`).join("");
 }
 
 function getVisibleCustomers() {
@@ -225,13 +265,16 @@ function getActionMarkup(customer, status) {
 function updateStats() {
     const total = state.customers.length;
     const completed = state.customers.filter(c => normalizeStatus(c.status) === "completed").length;
-    
-    const ratings = state.customers
-        .map(c => Number(c.rating))
-        .filter(r => Number.isFinite(r) && r > 0);
-        
-    const satisfactionRate = total > 0 ? Math.round((completed / total) * 100) : 96;
+    const pending = state.customers.filter(c => {
+        const s = normalizeStatus(c.status);
+        return s === "pending" || s === "initiated" || s === "calling";
+    }).length;
 
+    if (elements.totalCustomers) elements.totalCustomers.innerText = total;
+    if (elements.pendingCustomers) elements.pendingCustomers.innerText = pending;
+    if (elements.completedCustomers) elements.completedCustomers.innerText = completed;
+
+    const satisfactionRate = total > 0 ? Math.round((completed / total) * 100) : 96;
     if (elements.statSatisfaction) elements.statSatisfaction.innerText = `${satisfactionRate}%`;
     if (elements.statCompletion) elements.statCompletion.innerText = `${total > 0 ? Math.round((completed / total) * 100) : 91}%`;
 }
@@ -256,7 +299,7 @@ async function addCustomer(event) {
         });
 
         elements.form.reset();
-        elements.addModal.classList.remove("active");
+        if (elements.addModal) elements.addModal.classList.remove("active");
         await loadCustomers();
         showToast("Agent task queued successfully.");
     } catch (error) {
@@ -335,6 +378,14 @@ function updateModalTranscript(customerId) {
     }).join("");
 
     elements.modalConversation.scrollTop = elements.modalConversation.scrollHeight;
+}
+
+function setTableMessage(message) {
+    elements.table.innerHTML = `
+        <tr>
+            <td colspan="6" class="empty-cell">${escapeHtml(message)}</td>
+        </tr>
+    `;
 }
 
 function setButtonLoading(button, loading, label) {
