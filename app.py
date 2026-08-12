@@ -21,7 +21,14 @@ gemini = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 VOICE = "Google.en-US-Chirp3-HD-Aoede"
-IS_VERCEL = bool(os.getenv("VERCEL") or os.getenv("VERCEL_ENV"))
+
+# Detect Vercel / Linux Serverless Environment
+IS_VERCEL = bool(
+    os.getenv("VERCEL") or 
+    os.getenv("VERCEL_ENV") or 
+    os.getenv("AWS_LAMBDA_FUNCTION_NAME") or 
+    os.name != "nt"
+)
 
 app = Flask(__name__)
 
@@ -101,7 +108,7 @@ def update_env_base_url(live_url):
         print(f"[Auto-Env Warning] {e}")
 
 def start_local_cloudflare_tunnel():
-    """Launches Cloudflare Free Tunnel locally (skipped automatically on Vercel)."""
+    """Launches Cloudflare Free Tunnel locally (skipped automatically on Vercel / Linux)."""
     global active_tunnel_url, cf_process
     if IS_VERCEL:
         return None
@@ -134,7 +141,6 @@ def start_local_cloudflare_tunnel():
 def ensure_tunnel():
     """Master auto-tunnel initializer."""
     if IS_VERCEL:
-        print("[Environment] Running on Vercel Serverless Production Engine.")
         return os.getenv("BASE_URL", "")
 
     cf_url = start_local_cloudflare_tunnel()
@@ -318,7 +324,7 @@ def health():
         "status": "ok",
         "engine": "Gemini 2.5 Flash + Twilio Voice",
         "voice": VOICE,
-        "environment": "Vercel Production" if IS_VERCEL else "Local Development",
+        "environment": "Vercel Production Engine" if IS_VERCEL else "Local Development",
         "base_url": get_base_url()
     })
 

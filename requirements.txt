@@ -1,5 +1,4 @@
-﻿Flask==3.1.0
-twilio==9.3.5
-python-dotenv==1.0.1
-google-genai==0.1.1
-gunicorn==23.0.0
+﻿Flask
+twilio
+python-dotenv
+google-genai
