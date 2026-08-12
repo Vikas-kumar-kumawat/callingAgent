@@ -1,6 +1,5 @@
 ﻿const state = {
     customers: [],
-    campaignRunning: false,
     toastTimer: null,
     pollInterval: null,
     activeModalCustomerId: null
@@ -11,14 +10,11 @@ const elements = {};
 document.addEventListener("DOMContentLoaded", () => {
     cacheElements();
     bindEvents();
-    checkHealth();
-    loadCampaignStatus();
     loadCustomers();
 
-    // Auto-refresh every 2.5 seconds for live call & status updates
+    // Auto-refresh every 2.5 seconds for live status & feedback updates
     state.pollInterval = setInterval(() => {
         loadCustomers(true);
-        loadCampaignStatus(true);
         if (state.activeModalCustomerId) {
             updateModalTranscript(state.activeModalCustomerId);
         }
@@ -35,12 +31,7 @@ function cacheElements() {
     elements.filter = document.getElementById("statusFilter");
     elements.refresh = document.getElementById("refreshBtn");
     elements.resetSeed = document.getElementById("resetSeedBtn");
-    elements.campaignBadge = document.getElementById("campaignStatusBadge");
-    elements.campaignLabel = document.getElementById("campaignStatusLabel");
-    elements.startCampaign = document.getElementById("startCampaignBtn");
-    elements.stopCampaign = document.getElementById("stopCampaignBtn");
     elements.toast = document.getElementById("toast");
-    elements.ngrokText = document.getElementById("ngrokStatusText");
 
     // Modal elements
     elements.modal = document.getElementById("transcriptModal");
@@ -62,8 +53,6 @@ function bindEvents() {
     if (elements.resetSeed) {
         elements.resetSeed.addEventListener("click", resetSampleData);
     }
-    elements.startCampaign.addEventListener("click", startCampaign);
-    elements.stopCampaign.addEventListener("click", stopCampaign);
 
     // Table click listener for call buttons & transcript inspector
     elements.table.addEventListener("click", event => {
@@ -102,17 +91,6 @@ async function requestJson(url, options = {}) {
     return data;
 }
 
-async function checkHealth() {
-    try {
-        const data = await requestJson("/api/health");
-        if (data.base_url) {
-            elements.ngrokText.innerText = `Tunnel: ${data.base_url.replace('https://', '')}`;
-        }
-    } catch (e) {
-        elements.ngrokText.innerText = "Local Flask Active";
-    }
-}
-
 async function loadCustomers(isSilent = false) {
     try {
         const customers = await requestJson("/api/customers");
@@ -124,15 +102,6 @@ async function loadCustomers(isSilent = false) {
             setTableMessage(error.message);
             showToast(error.message, true);
         }
-    }
-}
-
-async function loadCampaignStatus(isSilent = false) {
-    try {
-        const result = await requestJson("/api/campaign");
-        updateCampaignStatus(Boolean(result.running));
-    } catch {
-        if (!isSilent) updateCampaignStatus(false);
     }
 }
 
@@ -172,7 +141,7 @@ function renderCustomers() {
                 <td>
                     <div class="actions-cell">
                         ${actionMarkup}
-                        <button class="btn btn-secondary icon-only" data-action="inspect" data-id="${customer.id}" title="Inspect Live Transcript">
+                        <button class="btn btn-secondary icon-only" data-action="inspect" data-id="${customer.id}" title="Inspect Spoken Conversation">
                             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
                         </button>
                     </div>
@@ -269,13 +238,12 @@ async function addCustomer(event) {
     } catch (error) {
         showToast(error.message, true);
     } finally {
-        setButtonLoading(elements.addButton, false, "Add to Call Queue");
+        setButtonLoading(elements.addButton, false, "Add Customer");
     }
 }
 
 async function callCustomer(customerId) {
     const customer = state.customers.find(item => String(item.id) === String(customerId));
-    const label = customer ? `${customer.name} (${customer.phone})` : "customer";
 
     try {
         const result = await requestJson("/api/call", {
@@ -293,32 +261,6 @@ async function callCustomer(customerId) {
     }
 }
 
-async function startCampaign() {
-    setButtonLoading(elements.startCampaign, true, "Starting...");
-    try {
-        const result = await requestJson("/api/campaign/start", { method: "POST" });
-        updateCampaignStatus(Boolean(result.running));
-        showToast("Autodialer campaign started.");
-    } catch (error) {
-        showToast(error.message, true);
-    } finally {
-        setButtonLoading(elements.startCampaign, false, "Start Campaign");
-    }
-}
-
-async function stopCampaign() {
-    setButtonLoading(elements.stopCampaign, true, "Stopping...");
-    try {
-        const result = await requestJson("/api/campaign/stop", { method: "POST" });
-        updateCampaignStatus(Boolean(result.running));
-        showToast("Campaign stopped.");
-    } catch (error) {
-        showToast(error.message, true);
-    } finally {
-        setButtonLoading(elements.stopCampaign, false, "Stop");
-    }
-}
-
 async function resetSampleData() {
     try {
         await requestJson("/api/seed", { method: "POST" });
@@ -327,12 +269,6 @@ async function resetSampleData() {
     } catch (err) {
         showToast("Failed to reset sample data.", true);
     }
-}
-
-function updateCampaignStatus(running) {
-    state.campaignRunning = running;
-    elements.campaignLabel.innerText = running ? "Campaign Active" : "Stopped";
-    elements.campaignBadge.className = `status-pill ${running ? "running" : "stopped"}`;
 }
 
 // Modal Transcript Inspector
@@ -351,7 +287,7 @@ function updateModalTranscript(customerId) {
     const customer = state.customers.find(c => String(c.id) === String(customerId));
     if (!customer) return;
 
-    elements.modalName.innerText = `${customer.name}'s Call Intelligence`;
+    elements.modalName.innerText = `${customer.name}'s Feedback Transcript`;
     elements.modalPhone.innerText = customer.phone;
     elements.modalStatus.innerText = statusLabel(customer.status);
     
@@ -376,14 +312,13 @@ function updateModalTranscript(customerId) {
         `;
     }).join("");
 
-    // Auto-scroll to bottom of conversation
     elements.modalConversation.scrollTop = elements.modalConversation.scrollHeight;
 }
 
 function setTableMessage(message) {
     elements.table.innerHTML = `
         <tr>
-            <td colspan="6" class="state-cell">${escapeHtml(message)}</td>
+            <td colspan="6" class="empty-cell">${escapeHtml(message)}</td>
         </tr>
     `;
 }

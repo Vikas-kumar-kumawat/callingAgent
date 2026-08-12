@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Voice Feedback Agent | Autonomous Operations</title>
+    <title>AI Customer Feedback Agent</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -11,79 +11,33 @@
 </head>
 <body>
 
-<div class="app-container">
-    <!-- Sidebar Navigation -->
-    <aside class="sidebar">
-        <div class="brand">
-            <div class="brand-icon">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
+<div class="app-layout">
+    <!-- Top Brand Header -->
+    <header class="app-header">
+        <div class="brand-block">
+            <div class="brand-avatar">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
             </div>
-            <div class="brand-text">
-                <span class="brand-title">AURA VOICE</span>
-                <span class="brand-subtitle">AI Feedback Ops</span>
+            <div>
+                <h1 class="app-title">Customer Feedback AI Agent</h1>
+                <p class="app-subtitle">Autonomous Voice Survey & Real-Time Feedback Collection</p>
             </div>
         </div>
 
-        <nav class="nav-menu">
-            <a class="nav-link active" href="#dashboard">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
-                <span>Dashboard</span>
-            </a>
-            <a class="nav-link" href="#customers">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
-                <span>Customer Ops</span>
-            </a>
-            <a class="nav-link" href="#new-customer">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-                <span>Add Customer</span>
-            </a>
-        </nav>
-
-        <div class="system-status-card">
-            <div class="status-header">
-                <span class="pulse-dot active"></span>
-                <span>AI VOICE ENGINE</span>
-            </div>
-            <div class="status-body">
-                <strong>Gemini 2.5 + Chirp3 HD</strong>
-                <small id="ngrokStatusText">Detecting Ngrok Tunnel...</small>
-            </div>
+        <div class="header-status">
+            <span class="pulse-dot active"></span>
+            <span class="engine-tag">Sarah (Gemini Voice AI)</span>
         </div>
-    </aside>
+    </header>
 
     <!-- Main Content Area -->
-    <main class="main-content">
-        <!-- Top Navigation Header -->
-        <header class="topbar">
-            <div class="topbar-title">
-                <span class="badge-tag">AUTONOMOUS CALLING AGENT</span>
-                <h1>Customer Voice Intelligence</h1>
-            </div>
+    <main class="main-wrapper">
 
-            <div class="campaign-bar">
-                <div class="campaign-info">
-                    <span class="label">AUTODIALER STATUS</span>
-                    <div id="campaignStatusBadge" class="status-pill stopped">
-                        <span class="pulse-dot"></span>
-                        <span id="campaignStatusLabel">Stopped</span>
-                    </div>
-                </div>
-                <button id="startCampaignBtn" class="btn btn-success" type="button">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-                    Start Campaign
-                </button>
-                <button id="stopCampaignBtn" class="btn btn-danger" type="button">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="6" y="6" width="12" height="12"></rect></svg>
-                    Stop
-                </button>
-            </div>
-        </header>
-
-        <!-- KPI Metrics Grid -->
-        <section id="dashboard" class="metrics-grid">
+        <!-- Metrics Grid -->
+        <section class="metrics-grid">
             <div class="metric-card">
                 <div class="metric-icon blue">
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle></svg>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle></svg>
                 </div>
                 <div class="metric-data">
                     <span class="metric-label">Total Customers</span>
@@ -93,7 +47,7 @@
 
             <div class="metric-card">
                 <div class="metric-icon yellow">
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
                 </div>
                 <div class="metric-data">
                     <span class="metric-label">Pending Queue</span>
@@ -103,17 +57,17 @@
 
             <div class="metric-card">
                 <div class="metric-icon green">
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
                 </div>
                 <div class="metric-data">
-                    <span class="metric-label">Calls Completed</span>
+                    <span class="metric-label">Feedback Collected</span>
                     <strong id="completedCustomers" class="metric-value">0</strong>
                 </div>
             </div>
 
             <div class="metric-card">
                 <div class="metric-icon purple">
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
                 </div>
                 <div class="metric-data">
                     <span class="metric-label">Avg Rating Score</span>
@@ -122,26 +76,53 @@
             </div>
         </section>
 
-        <!-- Customer Operations & Real-time Database -->
-        <section id="customers" class="panel-section">
-            <div class="panel-header">
+        <!-- Quick Add Customer Form -->
+        <section class="panel-card">
+            <div class="panel-title-bar">
                 <div>
-                    <h2>Customer Queue & Call Operations</h2>
-                    <p>Trigger AI voice calls, inspect live transcripts, and capture customer satisfaction.</p>
+                    <h2>Add Customer to Call Queue</h2>
+                    <p>Enter customer details to initiate an AI voice survey call.</p>
+                </div>
+            </div>
+
+            <form id="customerForm" class="simple-form">
+                <div class="form-input-group">
+                    <label for="customerName">Customer Name</label>
+                    <input id="customerName" name="name" type="text" placeholder="e.g. Alex Morgan" required>
                 </div>
 
-                <div class="panel-actions">
-                    <div class="search-input-wrap">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-                        <input id="customerSearch" type="search" placeholder="Search name or phone...">
+                <div class="form-input-group">
+                    <label for="customerPhone">Phone Number</label>
+                    <input id="customerPhone" name="phone" type="tel" placeholder="+919057262630" required>
+                </div>
+
+                <button id="addCustomerBtn" class="btn btn-primary" type="submit">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                    Add Customer
+                </button>
+            </form>
+        </section>
+
+        <!-- Customer Operations Table -->
+        <section class="panel-card">
+            <div class="panel-header-toolbar">
+                <div>
+                    <h2>Customer Feedback Operations</h2>
+                    <p>Trigger AI voice calls and view real-time customer ratings and transcripts.</p>
+                </div>
+
+                <div class="toolbar-actions">
+                    <div class="search-box">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                        <input id="customerSearch" type="search" placeholder="Search customer or phone...">
                     </div>
 
-                    <select id="statusFilter" class="select-input">
+                    <select id="statusFilter" class="select-filter">
                         <option value="all">All Status</option>
-                        <option value="pending">Waiting Queue</option>
-                        <option value="calling">In Active Call</option>
-                        <option value="completed">Call Completed</option>
-                        <option value="failed">Failed / No Answer</option>
+                        <option value="pending">Waiting</option>
+                        <option value="calling">In Call</option>
+                        <option value="completed">Completed</option>
+                        <option value="failed">Failed</option>
                     </select>
 
                     <button id="refreshBtn" class="btn btn-secondary icon-only" title="Refresh Data">
@@ -152,59 +133,27 @@
                 </div>
             </div>
 
-            <div class="table-container">
+            <div class="table-frame">
                 <table class="data-table">
                     <thead>
                         <tr>
-                            <th>Customer Info</th>
+                            <th>Customer</th>
                             <th>Phone Number</th>
-                            <th>Call Status</th>
-                            <th>Satisfaction</th>
-                            <th>Spoken Feedback & Sentiment</th>
-                            <th>Actions</th>
+                            <th>Status</th>
+                            <th>Rating</th>
+                            <th>Customer Spoken Feedback</th>
+                            <th>Action</th>
                         </tr>
                     </thead>
                     <tbody id="customerTable">
                         <tr>
-                            <td colspan="6" class="state-cell">Loading customer intelligence...</td>
+                            <td colspan="6" class="empty-cell">Loading customer data...</td>
                         </tr>
                     </tbody>
                 </table>
             </div>
         </section>
 
-        <!-- Add Customer Form -->
-        <section id="new-customer" class="panel-section grid-split">
-            <div class="form-intro">
-                <h2>Queue New Customer</h2>
-                <p>Add a customer phone number to initiate an immediate AI Voice Feedback call or include them in the automated campaign queue.</p>
-                <div class="info-box">
-                    <span class="info-title">Voice Call Flow</span>
-                    <ul>
-                        <li>Sarah (AI Agent) greets the customer warmly.</li>
-                        <li>Collects overall experience & 1-5 star rating.</li>
-                        <li>Analyzes sentiment & saves full transcript in real-time.</li>
-                    </ul>
-                </div>
-            </div>
-
-            <form id="customerForm" class="glass-form">
-                <div class="form-group">
-                    <label for="customerName">Full Name</label>
-                    <input id="customerName" name="name" type="text" placeholder="e.g. Alex Morgan" required>
-                </div>
-
-                <div class="form-group">
-                    <label for="customerPhone">Phone Number (with Country Code)</label>
-                    <input id="customerPhone" name="phone" type="tel" placeholder="+919057262630" required>
-                </div>
-
-                <button id="addCustomerBtn" class="btn btn-primary btn-block" type="submit">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-                    Add to Call Queue
-                </button>
-            </form>
-        </section>
     </main>
 </div>
 
@@ -213,7 +162,7 @@
     <div class="modal-card">
         <div class="modal-header">
             <div>
-                <span class="modal-subtitle">REAL-TIME CALL INTELLIGENCE</span>
+                <span class="modal-subtitle">AI VOICE FEEDBACK TRANSCRIPT</span>
                 <h3 id="modalCustomerName">Customer Call Transcript</h3>
             </div>
             <button id="closeModalBtn" class="close-btn">&times;</button>
