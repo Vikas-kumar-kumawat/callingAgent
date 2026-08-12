@@ -2,3 +2,4 @@
 twilio
 python-dotenv
 google-genai
+gunicorn

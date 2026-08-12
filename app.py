@@ -22,13 +22,10 @@ gemini = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 VOICE = "Google.en-US-Chirp3-HD-Aoede"
 
-# Detect Vercel / Linux Serverless Environment
-IS_VERCEL = bool(
-    os.getenv("VERCEL") or 
-    os.getenv("VERCEL_ENV") or 
-    os.getenv("AWS_LAMBDA_FUNCTION_NAME") or 
-    os.name != "nt"
-)
+# Environment Detection
+IS_RENDER = bool(os.getenv("RENDER") or os.getenv("RENDER_EXTERNAL_HOSTNAME"))
+IS_VERCEL = bool(os.getenv("VERCEL") or os.getenv("VERCEL_ENV") or os.getenv("AWS_LAMBDA_FUNCTION_NAME"))
+IS_CLOUD_PROD = IS_RENDER or IS_VERCEL or (os.name != "nt")
 
 app = Flask(__name__)
 
@@ -51,9 +48,16 @@ cf_process = None
 
 def get_base_url():
     """Returns live public HTTPS URL.
-    - Production (Vercel): uses request.host_url or VERCEL_URL or BASE_URL.
+    - Production (Render): uses RENDER_EXTERNAL_HOSTNAME (e.g. https://calling-agent.onrender.com).
+    - Production (Vercel): uses request.host_url or VERCEL_URL.
     - Local: uses active Cloudflare/tunnel URL."""
-    # 1. Check Flask request context first
+    # 1. Check Render external hostname
+    r_host = os.getenv("RENDER_EXTERNAL_HOSTNAME")
+    if r_host:
+        r_host = r_host.rstrip("/")
+        return f"https://{r_host}" if not r_host.startswith("http") else r_host
+
+    # 2. Check Flask request context
     try:
         if request and request.host:
             host = request.host.rstrip("/")
@@ -63,24 +67,24 @@ def get_base_url():
     except Exception:
         pass
 
-    # 2. Check VERCEL_URL
+    # 3. Check VERCEL_URL
     v_url = os.getenv("VERCEL_URL")
     if v_url:
         v_url = v_url.rstrip("/")
         return f"https://{v_url}" if not v_url.startswith("http") else v_url
 
-    # 3. Check BASE_URL from env
+    # 4. Check BASE_URL from env
     base_env = os.getenv("BASE_URL", "").strip().rstrip("/")
     if base_env:
         return base_env
 
-    # 4. Fallback to active local tunnel URL
+    # 5. Fallback to active local tunnel URL
     global active_tunnel_url
     return active_tunnel_url
 
 def update_env_base_url(live_url):
     """Auto-updates BASE_URL in .env file when running locally."""
-    if IS_VERCEL or not live_url:
+    if IS_CLOUD_PROD or not live_url:
         return
     env_path = os.path.join(os.path.dirname(__file__), ".env")
     if not os.path.exists(env_path):
@@ -108,9 +112,9 @@ def update_env_base_url(live_url):
         print(f"[Auto-Env Warning] {e}")
 
 def start_local_cloudflare_tunnel():
-    """Launches Cloudflare Free Tunnel locally (skipped automatically on Vercel / Linux)."""
+    """Launches Cloudflare Free Tunnel locally (skipped automatically on Render / Vercel)."""
     global active_tunnel_url, cf_process
-    if IS_VERCEL:
+    if IS_CLOUD_PROD:
         return None
 
     cf_bin = os.path.join(os.path.dirname(__file__), "cloudflared.exe")
@@ -140,7 +144,7 @@ def start_local_cloudflare_tunnel():
 
 def ensure_tunnel():
     """Master auto-tunnel initializer."""
-    if IS_VERCEL:
+    if IS_CLOUD_PROD:
         return os.getenv("BASE_URL", "")
 
     cf_url = start_local_cloudflare_tunnel()
@@ -266,7 +270,7 @@ Rules:
     return ai_text
 
 # =========================
-# CAMPAIGN WORKER THREAD (Only in non-Vercel environment)
+# CAMPAIGN WORKER THREAD (Runs locally and on Render WSGI)
 # =========================
 def campaign_loop():
     while True:
@@ -320,11 +324,12 @@ def index():
 
 @app.route("/api/health")
 def health():
+    env_name = "Render Production" if IS_RENDER else ("Vercel Production" if IS_VERCEL else "Local Development")
     return jsonify({
         "status": "ok",
         "engine": "Gemini 2.5 Flash + Twilio Voice",
         "voice": VOICE,
-        "environment": "Vercel Production Engine" if IS_VERCEL else "Local Development",
+        "environment": env_name,
         "base_url": get_base_url()
     })
 
@@ -670,4 +675,5 @@ def stop_campaign():
     return jsonify({"success": True, "running": False, "message": "Campaign stopped"})
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    port = int(os.getenv("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=True)
