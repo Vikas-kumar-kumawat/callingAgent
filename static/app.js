@@ -1,8 +1,11 @@
-﻿const state = {
+const state = {
     customers: [],
+    voices: [],
+    activeVoiceId: null,
     toastTimer: null,
     pollInterval: null,
-    activeModalCustomerId: null
+    activeModalCustomerId: null,
+    activeDetailCustomerId: null
 };
 
 const elements = {};
@@ -10,19 +13,25 @@ const elements = {};
 document.addEventListener("DOMContentLoaded", () => {
     cacheElements();
     initTheme();
+    initAuth();
     bindEvents();
-    loadCustomers();
-
-    // Auto-refresh every 2.5 seconds for live status & feedback updates
-    state.pollInterval = setInterval(() => {
-        loadCustomers(true);
-        if (state.activeModalCustomerId) {
-            updateModalTranscript(state.activeModalCustomerId);
-        }
-    }, 2500);
 });
 
 function cacheElements() {
+    // Auth Elements
+    elements.loginOverlay = document.getElementById("loginOverlay");
+    elements.loginForm = document.getElementById("loginForm");
+    elements.adminUsername = document.getElementById("adminUsername");
+    elements.adminPassword = document.getElementById("adminPassword");
+    elements.loginErrorMsg = document.getElementById("loginErrorMsg");
+    elements.dashboardApp = document.getElementById("dashboardApp");
+    elements.logoutBtn = document.getElementById("logoutBtn");
+
+    // Voice Selector Elements
+    elements.voiceSelect = document.getElementById("voiceSelect");
+    elements.playVoiceDemoBtn = document.getElementById("playVoiceDemoBtn");
+
+    // Dashboard Elements
     elements.table = document.getElementById("customerTable");
     elements.form = document.getElementById("customerForm");
     elements.name = document.getElementById("customerName");
@@ -39,13 +48,19 @@ function cacheElements() {
     elements.openAddModal = document.getElementById("addCustomerModalBtn");
     elements.closeAddModal = document.getElementById("closeAddModalBtn");
 
-    // Summary Stats
-    elements.totalCustomers = document.getElementById("totalCustomers");
-    elements.pendingCustomers = document.getElementById("pendingCustomers");
-    elements.completedCustomers = document.getElementById("completedCustomers");
-    elements.statAccuracy = document.getElementById("statAccuracy");
-    elements.statSatisfaction = document.getElementById("statSatisfaction");
-    elements.statCompletion = document.getElementById("statCompletion");
+    // Detailed Feedback Modal Page
+    elements.detailModal = document.getElementById("feedbackDetailModal");
+    elements.closeDetailModal = document.getElementById("closeDetailModalBtn");
+    elements.closeDetailFooter = document.getElementById("closeDetailFooterBtn");
+    elements.detailName = document.getElementById("detailCustomerName");
+    elements.detailPhone = document.getElementById("detailCustomerPhone");
+    elements.detailRating = document.getElementById("detailCustomerRating");
+    elements.detailSentiment = document.getElementById("detailCustomerSentiment");
+    elements.detailStatus = document.getElementById("detailCustomerStatus");
+    elements.detailQuotes = document.getElementById("detailFeedbackQuotes");
+    elements.detailConversation = document.getElementById("detailConversation");
+    elements.detailCallBtn = document.getElementById("detailCallBtn");
+    elements.detailClearBtn = document.getElementById("detailClearFeedbackBtn");
 
     // Theme elements
     elements.themeToggleBtn = document.getElementById("themeToggleBtn");
@@ -61,6 +76,46 @@ function cacheElements() {
     elements.modalSentiment = document.getElementById("modalCustomerSentiment");
     elements.modalConversation = document.getElementById("transcriptConversation");
     elements.modalCallBtn = document.getElementById("modalCallBtn");
+}
+
+function initAuth() {
+    const isAuthenticated = localStorage.getItem("adminAuth") === "true";
+
+    if (isAuthenticated) {
+        unlockDashboard();
+    } else {
+        lockDashboard();
+    }
+}
+
+function unlockDashboard() {
+    if (elements.loginOverlay) elements.loginOverlay.classList.add("hidden");
+    if (elements.dashboardApp) elements.dashboardApp.classList.remove("hidden-auth");
+    
+    loadVoices();
+    loadCustomers();
+
+    if (!state.pollInterval) {
+        state.pollInterval = setInterval(() => {
+            loadCustomers(true);
+            if (state.activeModalCustomerId) {
+                updateModalTranscript(state.activeModalCustomerId);
+            }
+            if (state.activeDetailCustomerId) {
+                updateDetailModal(state.activeDetailCustomerId);
+            }
+        }, 2500);
+    }
+}
+
+function lockDashboard() {
+    if (elements.loginOverlay) elements.loginOverlay.classList.remove("hidden");
+    if (elements.dashboardApp) elements.dashboardApp.classList.add("hidden-auth");
+    
+    if (state.pollInterval) {
+        clearInterval(state.pollInterval);
+        state.pollInterval = null;
+    }
 }
 
 function initTheme() {
@@ -84,7 +139,139 @@ function applyTheme(theme) {
     }
 }
 
+async function loadVoices() {
+    try {
+        const res = await requestJson("/api/voices");
+        if (res && res.voices) {
+            state.voices = res.voices;
+            state.activeVoiceId = res.active_voice;
+            renderVoiceDropdown();
+        }
+    } catch (err) {
+        console.warn("Failed to load voices:", err);
+    }
+}
+
+function renderVoiceDropdown() {
+    if (!elements.voiceSelect || !state.voices.length) return;
+
+    elements.voiceSelect.innerHTML = state.voices.map(voice => {
+        const icon = voice.gender === "Female" ? "👩 " : "👨 ";
+        return `
+            <option value="${voice.id}" ${voice.id === state.activeVoiceId ? "selected" : ""}>
+                ${icon} ${escapeHtml(voice.name)}
+            </option>
+        `;
+    }).join("");
+}
+
+async function changeActiveVoice(voiceId) {
+    try {
+        const res = await requestJson("/api/voices", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ voice_id: voiceId })
+        });
+        if (res && res.success) {
+            state.activeVoiceId = res.active_voice;
+            showToast(`Voice set to: ${res.voice_info ? res.voice_info.name : voiceId}`);
+            playVoiceDemoAudio(voiceId);
+        }
+    } catch (err) {
+        showToast(err.message, true);
+    }
+}
+
+function playVoiceDemoAudio(voiceId) {
+    const vId = voiceId || state.activeVoiceId;
+    const voiceInfo = state.voices.find(v => v.id === vId) || state.voices[0];
+    
+    if (elements.playVoiceDemoBtn) {
+        elements.playVoiceDemoBtn.innerText = "🔊 Playing...";
+    }
+
+    const audioUrl = `/api/demo-audio?voice_id=${encodeURIComponent(vId)}&t=${Date.now()}`;
+    const audio = new Audio(audioUrl);
+    
+    audio.play().then(() => {
+        audio.onended = () => {
+            if (elements.playVoiceDemoBtn) elements.playVoiceDemoBtn.innerText = "🔊 Demo";
+        };
+        audio.onerror = () => {
+            fallbackSpeechSynthesis(voiceInfo);
+        };
+    }).catch(err => {
+        console.warn("Audio play error, falling back to Web Speech:", err);
+        fallbackSpeechSynthesis(voiceInfo);
+    });
+}
+
+function fallbackSpeechSynthesis(voiceInfo) {
+    if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+        const textToSpeak = voiceInfo ? voiceInfo.sample_text : "Hello! I am your AI Voice Assistant.";
+        const utterance = new SpeechSynthesisUtterance(textToSpeak);
+        
+        if (voiceInfo && voiceInfo.gender === "Male") {
+            utterance.pitch = 0.92;
+            utterance.rate = 0.95;
+        } else {
+            utterance.pitch = 1.1;
+            utterance.rate = 1.0;
+        }
+
+        if (elements.playVoiceDemoBtn) {
+            elements.playVoiceDemoBtn.innerText = "🔊 Playing...";
+            utterance.onend = () => { if (elements.playVoiceDemoBtn) elements.playVoiceDemoBtn.innerText = "🔊 Demo"; };
+            utterance.onerror = () => { if (elements.playVoiceDemoBtn) elements.playVoiceDemoBtn.innerText = "🔊 Demo"; };
+        }
+        window.speechSynthesis.speak(utterance);
+    } else {
+        if (elements.playVoiceDemoBtn) elements.playVoiceDemoBtn.innerText = "🔊 Demo";
+    }
+}
+
 function bindEvents() {
+    // Voice Selection Event
+    if (elements.voiceSelect) {
+        elements.voiceSelect.addEventListener("change", (e) => {
+            changeActiveVoice(e.target.value);
+        });
+    }
+
+    if (elements.playVoiceDemoBtn) {
+        elements.playVoiceDemoBtn.addEventListener("click", () => {
+            playVoiceDemoAudio();
+        });
+    }
+
+    // Login Form Submit
+    if (elements.loginForm) {
+        elements.loginForm.addEventListener("submit", (e) => {
+            e.preventDefault();
+            const user = elements.adminUsername.value.trim();
+            const pass = elements.adminPassword.value.trim();
+
+            if (user.toUpperCase() === "VIKAS" && pass === "7014") {
+                localStorage.setItem("adminAuth", "true");
+                elements.loginErrorMsg.classList.add("hidden");
+                unlockDashboard();
+                showToast("Welcome Admin VIKAS! Access granted.");
+            } else {
+                elements.loginErrorMsg.classList.remove("hidden");
+            }
+        });
+    }
+
+    // Logout Action
+    if (elements.logoutBtn) {
+        elements.logoutBtn.addEventListener("click", () => {
+            localStorage.removeItem("adminAuth");
+            lockDashboard();
+            showToast("Portal locked. Logged out successfully.");
+        });
+    }
+
     elements.form.addEventListener("submit", addCustomer);
     elements.search.addEventListener("input", renderCustomers);
     elements.filter.addEventListener("change", renderCustomers);
@@ -112,21 +299,48 @@ function bindEvents() {
         });
     }
 
-    // Table click listener for call buttons & transcript inspector
+    // Table action listener
     elements.table.addEventListener("click", event => {
+        // Priority 1: Clear feedback button
+        const deleteFeedbackBtn = event.target.closest("[data-action='delete-feedback']");
+        if (deleteFeedbackBtn) {
+            event.stopPropagation();
+            deleteFeedback(deleteFeedbackBtn.dataset.id);
+            return;
+        }
+
+        // Priority 2: Start call button
         const callBtn = event.target.closest("[data-action='call']");
         if (callBtn) {
+            event.stopPropagation();
             callCustomer(callBtn.dataset.id);
             return;
         }
 
+        // Priority 3: Delete customer task button
+        const deleteCustomerBtn = event.target.closest("[data-action='delete-customer']");
+        if (deleteCustomerBtn) {
+            event.stopPropagation();
+            deleteCustomer(deleteCustomerBtn.dataset.id);
+            return;
+        }
+
+        // Priority 4: Quick transcript button
         const inspectBtn = event.target.closest("[data-action='inspect']");
         if (inspectBtn) {
+            event.stopPropagation();
             openTranscriptModal(inspectBtn.dataset.id);
+            return;
+        }
+
+        // Priority 5: Click anywhere on row / feedback box / customer name -> Open Details Page!
+        const row = event.target.closest("tr[data-customer-id]");
+        if (row) {
+            openDetailModal(row.dataset.customerId);
         }
     });
 
-    // Modal controls
+    // Transcript Modal controls
     elements.closeModal.addEventListener("click", closeModal);
     elements.closeModalFooter.addEventListener("click", closeModal);
     elements.modal.addEventListener("click", (e) => {
@@ -136,6 +350,25 @@ function bindEvents() {
     elements.modalCallBtn.addEventListener("click", () => {
         if (state.activeModalCustomerId) {
             callCustomer(state.activeModalCustomerId);
+        }
+    });
+
+    // Detailed Feedback Modal controls
+    elements.closeDetailModal.addEventListener("click", closeDetailModal);
+    elements.closeDetailFooter.addEventListener("click", closeDetailModal);
+    elements.detailModal.addEventListener("click", (e) => {
+        if (e.target === elements.detailModal) closeDetailModal();
+    });
+
+    elements.detailCallBtn.addEventListener("click", () => {
+        if (state.activeDetailCustomerId) {
+            callCustomer(state.activeDetailCustomerId);
+        }
+    });
+
+    elements.detailClearBtn.addEventListener("click", () => {
+        if (state.activeDetailCustomerId) {
+            deleteFeedback(state.activeDetailCustomerId);
         }
     });
 }
@@ -154,7 +387,6 @@ async function loadCustomers(isSilent = false) {
         const customers = await requestJson("/api/customers");
         state.customers = Array.isArray(customers) ? customers : [];
         renderCustomers();
-        updateStats();
     } catch (error) {
         if (!isSilent) {
             setTableMessage(error.message);
@@ -168,7 +400,6 @@ function renderCustomers() {
 
     if (!customers.length) {
         setTableMessage("No agent tasks found matching filter.");
-        updateStats();
         return;
     }
 
@@ -177,11 +408,11 @@ function renderCustomers() {
         const statusPill = getStatusPillMarkup(status);
         const rating = renderRatingStars(customer.rating);
         const sentiment = renderSentimentTag(customer.sentiment);
-        const feedbackList = renderFeedbackList(customer.feedback);
+        const feedbackList = renderFeedbackList(customer, customer.feedback);
         const actionMarkup = getActionMarkup(customer, status);
 
         return `
-            <tr>
+            <tr data-customer-id="${customer.id}" class="clickable-row" title="Click to view full customer feedback details">
                 <td>
                     <div class="customer-meta">
                         <span class="customer-name">Survey: ${escapeHtml(customer.name || "Customer")}</span>
@@ -192,7 +423,7 @@ function renderCustomers() {
                 <td>${statusPill}</td>
                 <td>${rating}</td>
                 <td>
-                    <div class="feedback-box">
+                    <div class="feedback-box clickable-feedback-box">
                         ${sentiment}
                         ${feedbackList}
                     </div>
@@ -202,6 +433,9 @@ function renderCustomers() {
                         ${actionMarkup}
                         <button class="btn btn-secondary btn-sm icon-only" data-action="inspect" data-id="${customer.id}" title="Inspect Spoken Conversation">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+                        </button>
+                        <button class="btn btn-danger btn-sm icon-only" data-action="delete-customer" data-id="${customer.id}" title="Delete Customer Task">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
                         </button>
                     </div>
                 </td>
@@ -234,11 +468,26 @@ function renderSentimentTag(sentiment) {
     return `<span class="sentiment-tag ${s}">${escapeHtml(sentiment || "Neutral")}</span>`;
 }
 
-function renderFeedbackList(feedback) {
+function renderFeedbackList(customer, feedback) {
     if (!feedback || !Array.isArray(feedback) || feedback.length === 0) {
-        return '<span class="feedback-item text-muted">No spoken feedback recorded yet</span>';
+        return `
+            <div class="feedback-content-wrap">
+                <span class="feedback-item text-muted">No feedback recorded yet (Click to inspect)</span>
+            </div>
+        `;
     }
-    return feedback.map(item => `<div class="feedback-item">"${escapeHtml(item)}"</div>`).join("");
+    const quotes = feedback.map(item => `<div class="feedback-item">"${escapeHtml(item)}"</div>`).join("");
+    return `
+        <div class="feedback-content-wrap">
+            ${quotes}
+            <div class="feedback-footer-row">
+                <span class="inspect-hint">View Details ↗</span>
+                <button class="clear-feedback-btn" data-action="delete-feedback" data-id="${customer.id}" title="Clear Feedback History">
+                    Clear ✕
+                </button>
+            </div>
+        </div>
+    `;
 }
 
 function getVisibleCustomers() {
@@ -262,32 +511,29 @@ function getActionMarkup(customer, status) {
     return `<button class="btn btn-primary btn-sm" type="button" data-action="call" data-id="${id}">Start Call</button>`;
 }
 
-function updateStats() {
-    const total = state.customers.length;
-    const completed = state.customers.filter(c => normalizeStatus(c.status) === "completed").length;
-    const pending = state.customers.filter(c => {
-        const s = normalizeStatus(c.status);
-        return s === "pending" || s === "initiated" || s === "calling";
-    }).length;
-
-    if (elements.totalCustomers) elements.totalCustomers.innerText = total;
-    if (elements.pendingCustomers) elements.pendingCustomers.innerText = pending;
-    if (elements.completedCustomers) elements.completedCustomers.innerText = completed;
-
-    const satisfactionRate = total > 0 ? Math.round((completed / total) * 100) : 96;
-    if (elements.statSatisfaction) elements.statSatisfaction.innerText = `${satisfactionRate}%`;
-    if (elements.statCompletion) elements.statCompletion.innerText = `${total > 0 ? Math.round((completed / total) * 100) : 91}%`;
+function normalizePhone(phone) {
+    if (!phone) return "";
+    let cleaned = phone.replace(/[^\d+]/g, "").trim();
+    if (!cleaned) return "";
+    if (cleaned.startsWith("+")) return cleaned;
+    if (cleaned.startsWith("00")) return "+" + cleaned.slice(2);
+    if (cleaned.startsWith("0") && cleaned.length === 11) cleaned = cleaned.slice(1);
+    if (cleaned.length === 10) return "+91" + cleaned;
+    if (cleaned.length === 12 && cleaned.startsWith("91")) return "+" + cleaned;
+    return "+" + cleaned;
 }
 
 async function addCustomer(event) {
     event.preventDefault();
     const name = elements.name.value.trim();
-    const phone = elements.phone.value.trim();
+    const rawPhone = elements.phone.value.trim();
 
-    if (!name || !phone) {
+    if (!name || !rawPhone) {
         showToast("Enter customer name and phone number.", true);
         return;
     }
+
+    const phone = normalizePhone(rawPhone);
 
     setButtonLoading(elements.addButton, true, "Adding...");
 
@@ -306,6 +552,40 @@ async function addCustomer(event) {
         showToast(error.message, true);
     } finally {
         setButtonLoading(elements.addButton, false, "Queue Agent Task");
+    }
+}
+
+async function deleteCustomer(customerId) {
+    const customer = state.customers.find(item => String(item.id) === String(customerId));
+    const name = customer ? customer.name : "customer";
+
+    if (!confirm(`Are you sure you want to delete ${name}?`)) return;
+
+    try {
+        await requestJson(`/api/customers/${customerId}`, { method: "DELETE" });
+        showToast(`Deleted ${name} successfully.`);
+        if (state.activeDetailCustomerId === customerId) closeDetailModal();
+        await loadCustomers();
+    } catch (error) {
+        showToast(error.message, true);
+    }
+}
+
+async function deleteFeedback(customerId) {
+    const customer = state.customers.find(item => String(item.id) === String(customerId));
+    const name = customer ? customer.name : "customer";
+
+    if (!confirm(`Clear feedback history for ${name}?`)) return;
+
+    try {
+        await requestJson(`/api/customers/${customerId}/feedback`, { method: "DELETE" });
+        showToast(`Cleared feedback for ${name}.`);
+        await loadCustomers();
+        if (state.activeDetailCustomerId === customerId) {
+            updateDetailModal(customerId);
+        }
+    } catch (error) {
+        showToast(error.message, true);
     }
 }
 
@@ -333,6 +613,65 @@ async function resetSampleData() {
         await loadCustomers();
     } catch (err) {
         showToast("Failed to reset sample data.", true);
+    }
+}
+
+// Ultra-Clean Detailed Feedback Modal Inspector Page
+function openDetailModal(customerId) {
+    state.activeDetailCustomerId = customerId;
+    elements.detailModal.classList.add("active");
+    updateDetailModal(customerId);
+}
+
+function closeDetailModal() {
+    state.activeDetailCustomerId = null;
+    elements.detailModal.classList.remove("active");
+}
+
+function updateDetailModal(customerId) {
+    const customer = state.customers.find(c => String(c.id) === String(customerId));
+    if (!customer) return;
+
+    elements.detailName.innerText = customer.name || "Customer";
+    elements.detailPhone.innerText = customer.phone || "";
+    elements.detailRating.innerHTML = renderRatingStars(customer.rating);
+    
+    const sent = customer.sentiment || "Neutral";
+    elements.detailSentiment.innerText = sent;
+    elements.detailSentiment.className = `sentiment-tag ${sent.toLowerCase()}`;
+
+    const status = normalizeStatus(customer.status);
+    elements.detailStatus.innerText = statusLabel(status);
+    elements.detailStatus.className = `status-pill ${status}`;
+
+    // Render clean spoken feedback quotes
+    const quotes = customer.feedback || [];
+    if (!quotes.length) {
+        elements.detailQuotes.innerHTML = `<div class="clean-quote-item text-muted">No spoken feedback recorded yet.</div>`;
+    } else {
+        elements.detailQuotes.innerHTML = quotes.map(q => `
+            <div class="clean-quote-item">
+                💬 "${escapeHtml(q)}"
+            </div>
+        `).join("");
+    }
+
+    // Render clean full call conversation dialogue
+    const transcript = customer.transcript || [];
+    if (!transcript.length) {
+        elements.detailConversation.innerHTML = `<div class="transcript-empty">No call transcript recorded yet.<br>Click "Start New Call" to initiate voice survey.</div>`;
+    } else {
+        elements.detailConversation.innerHTML = transcript.map(msg => {
+            const isAI = msg.speaker === "ai";
+            const label = isAI ? "AI Voice Agent" : customer.name;
+            return `
+                <div class="chat-bubble ${isAI ? "ai" : "customer"}">
+                    <span class="speaker-name">${escapeHtml(label)}</span>
+                    ${escapeHtml(msg.text)}
+                </div>
+            `;
+        }).join("");
+        elements.detailConversation.scrollTop = elements.detailConversation.scrollHeight;
     }
 }
 

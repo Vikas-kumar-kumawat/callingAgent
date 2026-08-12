@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Voice AI Agent Dashboard</title>
+    <title>Customer Feedback Voice AI Agent</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -11,16 +11,62 @@
 </head>
 <body>
 
-<div class="agent-dashboard-container">
+<!-- ADMIN LOGIN OVERLAY SCREEN -->
+<div id="loginOverlay" class="login-overlay active">
+    <div class="login-card">
+        <div class="login-orb-header">
+            <img src="{{ url_for('static', filename='fluid_orb.png') }}" alt="Voice AI Fluid Orb" class="login-orb-img">
+            <div class="login-orb-glow"></div>
+        </div>
+
+        <div class="login-content">
+            <h2 class="login-title">Admin Access Portal</h2>
+            <p class="login-subtitle">Enter credentials to unlock Customer Feedback Operations</p>
+        </div>
+
+        <form id="loginForm" class="login-form">
+            <div id="loginErrorMsg" class="login-error-badge hidden">
+                Invalid Admin Name or Password.
+            </div>
+
+            <div class="form-input-group">
+                <label for="adminUsername">Admin Name</label>
+                <input id="adminUsername" type="text" placeholder="e.g. VIKAS" required autocomplete="username">
+            </div>
+
+            <div class="form-input-group">
+                <label for="adminPassword">Password</label>
+                <input id="adminPassword" type="password" placeholder="••••" required autocomplete="current-password">
+            </div>
+
+            <button id="loginSubmitBtn" type="submit" class="btn btn-primary login-btn">Unlock Portal 🔓</button>
+        </form>
+    </div>
+</div>
+
+<!-- MAIN DASHBOARD CONTENT -->
+<div id="dashboardApp" class="agent-dashboard-container hidden-auth">
 
     <!-- Top Floating Header Bar -->
     <header class="top-nav-bar">
         <div class="nav-brand">
             <span class="pulse-dot active"></span>
-            <span class="brand-text">VOICE AI FEEDBACK OPS</span>
+            <span class="brand-text">FEEDBACK VOICE AI</span>
         </div>
 
         <div class="nav-controls">
+            <!-- Voice Agent Selector with Demo Play button -->
+            <div class="voice-selector-wrap">
+                <select id="voiceSelect" class="select-filter voice-select" title="Choose AI Voice Agent">
+                    <option value="">Loading Voices...</option>
+                </select>
+                <button id="playVoiceDemoBtn" class="btn btn-secondary btn-sm" type="button" title="Play Voice Audio Demo">
+                    🔊 Demo
+                </button>
+            </div>
+
+            <span class="admin-badge">Admin: <strong>VIKAS</strong></span>
+
             <button id="addCustomerModalBtn" class="btn btn-primary btn-sm" type="button">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
                 New Task
@@ -31,127 +77,32 @@
             <button id="themeToggleBtn" class="theme-toggle-icon" type="button" title="Toggle Light/Dark Theme">
                 <span id="themeIcon">☀️</span>
             </button>
+
+            <button id="logoutBtn" class="btn btn-danger btn-sm" type="button" title="Lock / Logout Portal">Logout 🚪</button>
         </div>
     </header>
 
-    <!-- Main Vertical Scroll Layout -->
+    <!-- Main Clean Layout -->
     <main class="main-scroll-layout">
 
-        <!-- TOP HERO OVERVIEW (3-Column Layout from Screenshot) -->
-        <section class="grid-three-column">
-
-            <!-- LEFT PREVIEW CARD: Agent Tasks Overview -->
-            <div class="card-panel hero-summary-card">
-                <div class="panel-head">
-                    <h2 class="panel-title">Agent Overview</h2>
-                    <p class="panel-subtitle">Real-time status of active feedback survey tasks</p>
-                </div>
-
-                <div class="hero-kpi-stack">
-                    <div class="hero-kpi-item">
-                        <span class="kpi-mini-label">Total Queued Tasks</span>
-                        <strong id="totalCustomers" class="kpi-mini-val">0</strong>
-                    </div>
-                    <div class="hero-kpi-item">
-                        <span class="kpi-mini-label">Active / In Progress</span>
-                        <strong id="pendingCustomers" class="kpi-mini-val">0</strong>
-                    </div>
-                    <div class="hero-kpi-item">
-                        <span class="kpi-mini-label">Completed Surveys</span>
-                        <strong id="completedCustomers" class="kpi-mini-val">0</strong>
-                    </div>
-                </div>
+        <!-- CLEAN CENTERED AGENT HERO CARD -->
+        <section class="card-panel clean-hero-card">
+            <div class="clean-hero-orb-wrap">
+                <img src="{{ url_for('static', filename='fluid_orb.png') }}" alt="Voice AI Agent Fluid Orb" class="fluid-orb-img">
+                <div class="orb-glow-layer"></div>
             </div>
-
-            <!-- CENTER HERO CARD: 3D Organic Fluid Orb -->
-            <div class="hero-orb-card">
-                <div class="hero-orb-wrapper">
-                    <img src="{{ url_for('static', filename='fluid_orb.png') }}" alt="Voice AI Agent Fluid Orb" class="fluid-orb-img">
-                    <div class="orb-glow-layer"></div>
-                </div>
+            <div class="clean-hero-content">
+                <h1 class="clean-hero-title">Customer Feedback Voice AI</h1>
+                <p class="clean-hero-subtitle">Outbound automated feedback collector powered by Gemini 2.5 & Google Chirp3 HD Voice</p>
             </div>
-
-            <!-- RIGHT PANEL: Voice AI Agent Analytics & Tools -->
-            <div class="card-panel agent-panel">
-                <div class="agent-profile-header">
-                    <div class="agent-avatar-wrap">
-                        <img src="{{ url_for('static', filename='fluid_orb.png') }}" alt="Agent Avatar" class="agent-avatar-img">
-                    </div>
-                    <h2 class="agent-title">Voice AI Agent</h2>
-                </div>
-
-                <!-- Agent Tools Badges -->
-                <div class="tools-section">
-                    <span class="section-label">Agent Tools</span>
-                    <div class="tools-grid">
-                        <div class="tool-badge" title="Twilio Voice Telephony">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
-                        </div>
-                        <div class="tool-badge" title="Gemini 2.5 Intelligence Engine">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg>
-                        </div>
-                        <div class="tool-badge" title="Chirp3 HD Voice Output">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path></svg>
-                        </div>
-                        <div class="tool-badge" title="Realtime Webhooks API">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="18" r="3"></circle><circle cx="6" cy="6" r="3"></circle><path d="M13 6h3a2 2 0 0 1 2 2v7"></path><line x1="6" y1="9" x2="6" y2="21"></line></svg>
-                        </div>
-                        <div class="tool-badge" title="Feedback Analytics Hub">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"></rect><line x1="9" y1="9" x2="15" y2="15"></line></svg>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Key Statistics Grid -->
-                <div class="stats-section">
-                    <span class="section-label">Key Statistics</span>
-
-                    <div class="stats-split">
-                        <div class="accuracy-card">
-                            <span class="acc-badge">Response Accuracy</span>
-                            <div class="acc-value-row">
-                                <strong id="statAccuracy" class="acc-value">99%</strong>
-                                <span class="acc-growth">↗ 68%</span>
-                            </div>
-
-                            <div class="sparkline-container">
-                                <svg viewBox="0 0 100 45" class="sparkline-svg" preserveAspectRatio="none">
-                                    <defs>
-                                        <linearGradient id="sparklineGrad" x1="0" y1="0" x2="0" y2="1">
-                                            <stop offset="0%" stop-color="#ec4899" stop-opacity="0.6"/>
-                                            <stop offset="100%" stop-color="#ec4899" stop-opacity="0.0"/>
-                                        </linearGradient>
-                                    </defs>
-                                    <path d="M0,35 Q20,38 40,25 T80,12 T100,5 L100,45 L0,45 Z" fill="url(#sparklineGrad)" />
-                                    <path d="M0,35 Q20,38 40,25 T80,12 T100,5" fill="none" stroke="#ec4899" stroke-width="2" />
-                                </svg>
-                            </div>
-                        </div>
-
-                        <div class="stacked-kpis">
-                            <div class="mini-kpi-card">
-                                <span class="kpi-label">Customer Satisfaction</span>
-                                <strong id="statSatisfaction" class="kpi-val">96%</strong>
-                            </div>
-
-                            <div class="mini-kpi-card">
-                                <span class="kpi-label">Task Completion Rate</span>
-                                <strong id="statCompletion" class="kpi-val">91%</strong>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-            </div>
-
         </section>
 
-        <!-- LOWER SECTION: COMPLETE FULL SCREEN / FULL WIDTH AGENT TASKS CARD -->
+        <!-- FULL SCREEN / FULL WIDTH AGENT TASKS CARD -->
         <section class="card-panel full-width-task-card">
             <div class="panel-header-toolbar">
                 <div>
-                    <h2 class="panel-title">Agent Tasks & Feedback Operations</h2>
-                    <p class="panel-subtitle">Detailed breakdown of all customer feedback tasks, live statuses, star ratings, and spoken transcripts</p>
+                    <h2 class="panel-title">Customer Feedback Operations</h2>
+                    <p class="panel-subtitle">Click on any row to open feedback details & call transcript</p>
                 </div>
 
                 <div class="toolbar-actions">
@@ -183,7 +134,7 @@
                             <th style="width: 16%;">Phone Number</th>
                             <th style="width: 15%;">Agent Task Status</th>
                             <th style="width: 15%;">Star Rating</th>
-                            <th style="width: 22%;">Spoken Customer Feedback</th>
+                            <th style="width: 22%;">Customer Feedback</th>
                             <th style="width: 10%;">Actions</th>
                         </tr>
                     </thead>
@@ -219,6 +170,55 @@
                 <button id="addCustomerBtn" class="btn btn-primary" type="submit">Queue Agent Task</button>
             </div>
         </form>
+    </div>
+</div>
+
+<!-- Ultra-Clean Detailed Feedback Page / Inspector Modal -->
+<div id="feedbackDetailModal" class="modal-overlay">
+    <div class="modal-card clean-detail-card">
+        <!-- Clean Header -->
+        <div class="clean-detail-header">
+            <div class="clean-profile-block">
+                <div class="clean-avatar">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                </div>
+                <div>
+                    <h2 id="detailCustomerName" class="clean-title">Customer Name</h2>
+                    <span id="detailCustomerPhone" class="clean-phone">+91 ...</span>
+                </div>
+            </div>
+
+            <div class="clean-meta-badges">
+                <div id="detailCustomerRating" class="rating-stars-badge">★ 5.0</div>
+                <span id="detailCustomerSentiment" class="sentiment-tag positive">Positive</span>
+                <span id="detailCustomerStatus" class="status-pill completed">Completed</span>
+                <button id="closeDetailModalBtn" class="close-btn">&times;</button>
+            </div>
+        </div>
+
+        <div class="clean-detail-body">
+            <!-- Customer Spoken Feedback Section -->
+            <div class="clean-section">
+                <h4 class="clean-section-label">CUSTOMER SPOKEN FEEDBACK</h4>
+                <div id="detailFeedbackQuotes" class="clean-quotes-list">
+                    <div class="clean-quote-item">No feedback recorded yet.</div>
+                </div>
+            </div>
+
+            <!-- Full Call Conversation Dialogue -->
+            <div class="clean-section">
+                <h4 class="clean-section-label">FULL CALL CONVERSATION</h4>
+                <div id="detailConversation" class="clean-dialogue-box">
+                    <div class="transcript-empty">No call transcript recorded yet.</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="modal-footer">
+            <button id="detailCallBtn" class="btn btn-primary">Start New Call</button>
+            <button id="detailClearFeedbackBtn" class="btn btn-danger">Clear Feedback</button>
+            <button id="closeDetailFooterBtn" class="btn btn-secondary">Close</button>
+        </div>
     </div>
 </div>
 

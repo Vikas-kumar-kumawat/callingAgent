@@ -1,4 +1,4 @@
-﻿import os
+import os
 import uuid
 import json
 import re
@@ -20,7 +20,100 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 gemini = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-VOICE = "Google.en-US-Chirp3-HD-Aoede"
+
+VOICE_CATALOG = [
+    # --- FEMALE VOICES ---
+    {
+        "id": "Google.en-US-Chirp3-HD-Aoede",
+        "name": "Sarah (Chirp3 Ultra-HD Female - US)",
+        "accent": "US English",
+        "gender": "Female",
+        "sample_text": "Hello! I am Sarah, your AI Voice Assistant. How can I help you today?"
+    },
+    {
+        "id": "Google.en-US-Journey-F",
+        "name": "Emma (Journey Neural Female - US)",
+        "accent": "US English",
+        "gender": "Female",
+        "sample_text": "Hi there! I am Emma. I use hyper-realistic natural speech inflections and conversational dynamics."
+    },
+    {
+        "id": "Google.en-IN-Wavenet-D",
+        "name": "Priya (Wavenet Neural Female - India)",
+        "accent": "Indian English",
+        "gender": "Female",
+        "sample_text": "Namaste! I am Priya. I deliver warm, polite, and respectful customer feedback calls."
+    },
+    {
+        "id": "Google.en-GB-Studio-B",
+        "name": "Victoria (Studio Premium Female - UK British)",
+        "accent": "British English",
+        "gender": "Female",
+        "sample_text": "Good day! I am Victoria. I provide a sophisticated and professional British voice experience."
+    },
+    {
+        "id": "Google.en-US-Chirp3-HD-Kore",
+        "name": "Chloe (Chirp3 Ultra-HD Female - Soft & Friendly)",
+        "accent": "US English",
+        "gender": "Female",
+        "sample_text": "Hello! I am Chloe. I offer a gentle, friendly, and reassuring conversational tone."
+    },
+
+    # --- MALE VOICES ---
+    {
+        "id": "Google.en-US-Chirp3-HD-Fenrir",
+        "name": "Alex (Chirp3 Ultra-HD Male - US)",
+        "accent": "US English",
+        "gender": "Male",
+        "sample_text": "Hello! This is Alex. I am ready to handle your outbound customer feedback operations."
+    },
+    {
+        "id": "Google.en-US-Journey-D",
+        "name": "Marcus (Journey Deep Male - US)",
+        "accent": "US English",
+        "gender": "Male",
+        "sample_text": "Greetings! I am Marcus, your AI customer operations specialist with a deep, authoritative voice."
+    },
+    {
+        "id": "Google.en-IN-Wavenet-B",
+        "name": "Rohan (Wavenet Neural Male - India)",
+        "accent": "Indian English",
+        "gender": "Male",
+        "sample_text": "Hello! I am Rohan. I bring a clear, polite, and professional Indian male voice persona."
+    },
+    {
+        "id": "Google.en-GB-Studio-C",
+        "name": "Oliver (Studio Premium Male - UK British)",
+        "accent": "British English",
+        "gender": "Male",
+        "sample_text": "Hello there! I am Oliver, offering a crisp, refined British male voice for your survey calls."
+    },
+    {
+        "id": "Google.en-US-Chirp3-HD-Puck",
+        "name": "Ethan (Chirp3 Ultra-HD Male - Dynamic)",
+        "accent": "US English",
+        "gender": "Male",
+        "sample_text": "Hey there! I am Ethan, your energetic and engaging voice AI assistant."
+    }
+]
+
+ACTIVE_VOICE = "Google.en-IN-Wavenet-B"
+
+def get_active_agent_info():
+    global ACTIVE_VOICE
+    v_info = next((v for v in VOICE_CATALOG if v["id"] == ACTIVE_VOICE), VOICE_CATALOG[0])
+    agent_name = v_info["name"].split(" ")[0]
+    return {
+        "voice_id": ACTIVE_VOICE,
+        "agent_name": agent_name,
+        "info": v_info
+    }
+
+def get_active_voice():
+    return get_active_agent_info()["voice_id"]
+
+def get_active_agent_name():
+    return get_active_agent_info()["agent_name"]
 
 # Environment Detection
 IS_RENDER = bool(os.getenv("RENDER") or os.getenv("RENDER_EXTERNAL_HOSTNAME"))
@@ -47,17 +140,12 @@ active_tunnel_url = ""
 cf_process = None
 
 def get_base_url():
-    """Returns live public HTTPS URL.
-    - Production (Render): uses RENDER_EXTERNAL_HOSTNAME (e.g. https://calling-agent.onrender.com).
-    - Production (Vercel): uses request.host_url or VERCEL_URL.
-    - Local: uses active Cloudflare/tunnel URL."""
-    # 1. Check Render external hostname
+    """Returns live public HTTPS URL."""
     r_host = os.getenv("RENDER_EXTERNAL_HOSTNAME")
     if r_host:
         r_host = r_host.rstrip("/")
         return f"https://{r_host}" if not r_host.startswith("http") else r_host
 
-    # 2. Check Flask request context
     try:
         if request and request.host:
             host = request.host.rstrip("/")
@@ -67,18 +155,15 @@ def get_base_url():
     except Exception:
         pass
 
-    # 3. Check VERCEL_URL
     v_url = os.getenv("VERCEL_URL")
     if v_url:
         v_url = v_url.rstrip("/")
         return f"https://{v_url}" if not v_url.startswith("http") else v_url
 
-    # 4. Check BASE_URL from env
     base_env = os.getenv("BASE_URL", "").strip().rstrip("/")
     if base_env:
         return base_env
 
-    # 5. Fallback to active local tunnel URL
     global active_tunnel_url
     return active_tunnel_url
 
@@ -213,14 +298,48 @@ campaign_state = {
     "last_dialed": None
 }
 
+def normalize_phone_number(phone):
+    """
+    Normalizes any phone number into standard E.164 format (+91XXXXXXXXXX or +1XXXXXXXXXX).
+    If no country code is provided and it's 10 digits (e.g. 9057262630), defaults to India (+91).
+    Handles spaces, dashes, leading zeros, missing '+' prefix.
+    """
+    if not phone:
+        return ""
+    
+    cleaned = re.sub(r"[^\d+]", "", str(phone).strip())
+    if not cleaned:
+        return ""
+        
+    if cleaned.startswith("+"):
+        return cleaned
+
+    if cleaned.startswith("00"):
+        return "+" + cleaned[2:]
+
+    if cleaned.startswith("0") and len(cleaned) == 11:
+        cleaned = cleaned[1:]
+
+    if len(cleaned) == 10:
+        return f"+91{cleaned}"
+    
+    if len(cleaned) == 12 and cleaned.startswith("91"):
+        return f"+{cleaned}"
+        
+    return f"+{cleaned}"
+
 def find_customer(customer_id=None, phone=None):
     if customer_id:
         c = next((item for item in customers if item["id"] == customer_id), None)
         if c: return c
     if phone:
+        norm_phone = normalize_phone_number(phone)
         clean_target = re.sub(r"\D", "", str(phone))
         for item in customers:
-            clean_item = re.sub(r"\D", "", str(item.get("phone", "")))
+            item_phone = item.get("phone", "")
+            if item_phone == norm_phone:
+                return item
+            clean_item = re.sub(r"\D", "", str(item_phone))
             if clean_item and (clean_item.endswith(clean_target) or clean_target.endswith(clean_item)):
                 return item
     return None
@@ -230,16 +349,17 @@ def generate_ai_response(customer_text, customer=None):
     ai_text = ""
     lower = customer_text.lower()
     
+    agent_name = get_active_agent_name()
     if gemini:
         try:
             prompt = f"""
-You are Sarah, a warm and polite customer feedback phone agent.
+You are {agent_name} calling from BCT Fibernet regarding internet service feedback.
 The customer said: "{customer_text}"
 
 Rules:
-1. Acknowledge what they said naturally.
-2. If they haven't given a 1 to 5 star rating yet, ask for a star rating.
-3. Keep your reply concise (maximum 20 words).
+1. Acknowledge their feedback about BCT Fibernet internet service naturally.
+2. If they haven't given a 1 to 5 star rating yet, ask for a star rating out of 5.
+3. Keep your reply super concise (maximum 15 words).
 4. Speak naturally without markdown or internal labels.
 """
             res = gemini.models.generate_content(model=GEMINI_MODEL, contents=prompt)
@@ -270,52 +390,6 @@ Rules:
     return ai_text
 
 # =========================
-# CAMPAIGN WORKER THREAD (Runs locally and on Render WSGI)
-# =========================
-def campaign_loop():
-    while True:
-        try:
-            if campaign_state["running"]:
-                pending = next((c for c in customers if c["status"] == "pending"), None)
-                if pending:
-                    print(f"[Campaign Worker] Auto-dialing customer: {pending['name']} ({pending['phone']})")
-                    campaign_state["current_id"] = pending["id"]
-                    campaign_state["last_dialed"] = pending["name"]
-                    
-                    base = get_base_url()
-                    voice_url = f"{base}/api/twilio/voice?customer_id={pending['id']}"
-                    status_url = f"{base}/api/twilio/status?customer_id={pending['id']}"
-                    
-                    if twilio:
-                        try:
-                            pending["status"] = "calling"
-                            call = twilio.calls.create(
-                                to=pending["phone"],
-                                from_=TWILIO_PHONE_NUMBER,
-                                url=voice_url,
-                                method="POST",
-                                status_callback=status_url,
-                                status_callback_method="POST",
-                                status_callback_event=["initiated", "ringing", "answered", "completed"]
-                            )
-                            pending["call_sid"] = call.sid
-                        except Exception as ex:
-                            print(f"[Campaign Worker] Call creation failed: {ex}")
-                            pending["status"] = "failed"
-                    
-                    time.sleep(25)
-                else:
-                    print("[Campaign Worker] All customers processed. Stopping campaign.")
-                    campaign_state["running"] = False
-                    campaign_state["current_id"] = None
-        except Exception as err:
-            print(f"[Campaign Worker Error] {err}")
-        time.sleep(3)
-
-if not IS_VERCEL:
-    threading.Thread(target=campaign_loop, daemon=True).start()
-
-# =========================
 # FRONTEND & HEALTH
 # =========================
 @app.route("/")
@@ -328,10 +402,46 @@ def health():
     return jsonify({
         "status": "ok",
         "engine": "Gemini 2.5 Flash + Twilio Voice",
-        "voice": VOICE,
+        "active_voice": get_active_voice(),
         "environment": env_name,
         "base_url": get_base_url()
     })
+
+@app.route("/api/voices", methods=["GET", "POST"])
+def manage_voices():
+    global ACTIVE_VOICE
+    if request.method == "POST":
+        data = request.get_json(force=True, silent=True) or {}
+        voice_id = data.get("voice_id")
+        found = next((v for v in VOICE_CATALOG if v["id"] == voice_id), None)
+        if not found:
+            return jsonify({"success": False, "error": f"Voice ID '{voice_id}' not found in catalog"}), 400
+        ACTIVE_VOICE = voice_id
+        print(f"[Voice Updated] Active voice set to: {ACTIVE_VOICE} ({found['name']})")
+        return jsonify({"success": True, "active_voice": ACTIVE_VOICE, "voice_info": found})
+
+    return jsonify({
+        "success": True,
+        "active_voice": ACTIVE_VOICE,
+        "voices": VOICE_CATALOG
+    })
+
+@app.route("/api/demo-audio", methods=["GET"])
+def stream_voice_demo():
+    voice_id = request.args.get("voice_id") or get_active_voice()
+    v_info = next((v for v in VOICE_CATALOG if v["id"] == voice_id), VOICE_CATALOG[0])
+    text = v_info.get("sample_text", "Hello! I am your AI Voice Assistant.")
+    lang = "hi" if "IN" in voice_id and "Priya" in v_info["name"] else ("en-uk" if "GB" in voice_id else "en")
+    
+    tts_url = f"https://translate.google.com/translate_tts?ie=UTF-8&tl={lang}&client=tw-ob&q={urllib.parse.quote(text)}"
+    try:
+        req = urllib.request.Request(tts_url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            audio_bytes = resp.read()
+            return Response(audio_bytes, mimetype="audio/mpeg")
+    except Exception as e:
+        print(f"[Demo Audio Stream Error] {e}")
+        return jsonify({"error": "Failed to stream audio"}), 500
 
 # =========================
 # CUSTOMERS API
@@ -351,10 +461,12 @@ def get_customer_detail(customer_id):
 def add_customer():
     data = request.get_json(force=True, silent=True) or {}
     name = str(data.get("name", "")).strip()
-    phone = str(data.get("phone", "")).strip()
+    raw_phone = str(data.get("phone", "")).strip()
 
-    if not name or not phone:
+    if not name or not raw_phone:
         return jsonify({"success": False, "error": "Name and phone number are required"}), 400
+
+    phone = normalize_phone_number(raw_phone)
 
     existing = find_customer(phone=phone)
     if existing:
@@ -384,6 +496,19 @@ def delete_customer(customer_id):
         return jsonify({"success": False, "error": "Customer not found"}), 404
     customers = [item for item in customers if item["id"] != customer_id]
     return jsonify({"success": True, "message": "Customer deleted successfully"})
+
+@app.route("/api/customers/<customer_id>/feedback", methods=["DELETE"])
+def delete_customer_feedback(customer_id):
+    c = find_customer(customer_id=customer_id)
+    if not c:
+        return jsonify({"success": False, "error": "Customer not found"}), 404
+    c["feedback"] = []
+    c["rating"] = None
+    c["sentiment"] = "Neutral"
+    c["transcript"] = []
+    if c["status"] == "completed":
+        c["status"] = "pending"
+    return jsonify({"success": True, "message": "Customer feedback cleared successfully", "customer": c})
 
 @app.route("/api/seed", methods=["POST"])
 def reset_seed_data():
@@ -448,16 +573,20 @@ def make_call():
     if customer_id and not customer:
         return jsonify({"success": False, "error": "Customer ID not found"}), 404
 
-    target_phone = customer["phone"] if customer else phone
+    raw_target = customer["phone"] if customer else phone
+    target_phone = normalize_phone_number(raw_target)
     if not target_phone:
         return jsonify({"success": False, "error": "Phone number or valid customer_id is required"}), 400
+
+    if customer:
+        customer["phone"] = target_phone
 
     base = get_base_url()
     cid_param = f"?customer_id={customer['id']}" if customer else f"?phone={urllib.parse.quote(target_phone)}"
     voice_url = f"{base}/api/twilio/voice{cid_param}"
     status_url = f"{base}/api/twilio/status{cid_param}"
 
-    print(f"[Initiate Call] Dialing {target_phone} via Voice URL: {voice_url}")
+    print(f"[Initiate Call] Dialing {target_phone} (raw: {raw_target}) via Voice URL: {voice_url}")
 
     if not twilio:
         if customer:
@@ -519,9 +648,12 @@ def twilio_voice():
 
     response = VoiceResponse()
 
-    greeting_text = f"Hello {customer['name'] if customer else ''}! This is Sarah calling from Customer Operations. We would love to get your quick feedback today. How was your recent experience with our service?"
+    agent_name = get_active_agent_name()
+    c_name = customer['name'] if customer else ''
+    greeting_text = f"Hello {c_name}! I am {agent_name} from BCT Fibernet, calling for quick feedback on your internet service. How is your experience?"
     
-    response.say(greeting_text, voice=VOICE)
+    v = get_active_voice()
+    response.say(greeting_text, voice=v)
 
     if customer:
         customer["transcript"] = [{"speaker": "ai", "text": greeting_text}]
@@ -534,9 +666,9 @@ def twilio_voice():
         language="en-IN"
     )
 
-    gather.say("Please tell me about your experience.", voice=VOICE)
+    gather.say("How is your internet service experience?", voice=v)
 
-    response.say("Thank you for your time. Goodbye!", voice=VOICE)
+    response.say("Thank you for your feedback! Goodbye.", voice=v)
     response.hangup()
 
     return Response(str(response), status=200, content_type="text/xml")
@@ -560,8 +692,9 @@ def twilio_feedback():
     cid_param = f"?customer_id={customer['id']}" if customer else ""
     feedback_url = f"{base}/api/twilio/feedback{cid_param}"
 
+    v = get_active_voice()
     if not customer_text:
-        response.say("I didn't quite catch that. Could you please tell me about your experience?", voice=VOICE)
+        response.say("I didn't quite catch that. Could you please tell me about your experience?", voice=v)
         gather = response.gather(
             input="speech",
             action=feedback_url,
@@ -569,7 +702,7 @@ def twilio_feedback():
             speech_timeout="auto",
             language="en-IN"
         )
-        gather.say("I am listening.", voice=VOICE)
+        gather.say("I am listening.", voice=v)
         return Response(str(response), status=200, content_type="text/xml")
 
     if customer:
@@ -606,10 +739,11 @@ def twilio_feedback():
     bye_keywords = ["bye", "goodbye", "thank you", "thanks", "that's all", "done", "no", "that is all"]
     is_closing = any(w in customer_text.lower() for w in bye_keywords)
 
-    response.say(ai_text, voice=VOICE)
+    v = get_active_voice()
+    response.say(ai_text, voice=v)
 
     if is_closing or (customer and customer.get("rating") is not None and len(customer.get("feedback", [])) >= 2):
-        response.say("Have a fantastic day! Goodbye.", voice=VOICE)
+        response.say("Have a fantastic day! Goodbye.", voice=v)
         response.hangup()
         if customer:
             customer["status"] = "completed"
@@ -621,8 +755,8 @@ def twilio_feedback():
             speech_timeout="auto",
             language="en-IN"
         )
-        gather.say("Is there anything else you would like to add?", voice=VOICE)
-        response.say("Thank you for your feedback! Goodbye.", voice=VOICE)
+        gather.say("Is there anything else you would like to add?", voice=v)
+        response.say("Thank you for your feedback! Goodbye.", voice=v)
         response.hangup()
 
     return Response(str(response), status=200, content_type="text/xml")
@@ -649,30 +783,6 @@ def twilio_status():
             customer["status"] = "calling"
 
     return Response("OK", status=200)
-
-# =========================
-# CAMPAIGN API
-# =========================
-@app.route("/api/campaign", methods=["GET"])
-def get_campaign():
-    return jsonify({
-        "running": campaign_state["running"],
-        "current_id": campaign_state["current_id"],
-        "last_dialed": campaign_state["last_dialed"]
-    })
-
-@app.route("/api/campaign/start", methods=["POST"])
-def start_campaign():
-    campaign_state["running"] = True
-    print("[Campaign API] Campaign Started!")
-    return jsonify({"success": True, "running": True, "message": "Autodialer campaign started"})
-
-@app.route("/api/campaign/stop", methods=["POST"])
-def stop_campaign():
-    campaign_state["running"] = False
-    campaign_state["current_id"] = None
-    print("[Campaign API] Campaign Stopped!")
-    return jsonify({"success": True, "running": False, "message": "Campaign stopped"})
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 5000))
