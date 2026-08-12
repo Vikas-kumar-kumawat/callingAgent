@@ -1,484 +1,667 @@
-"""
-Real-Time AI Customer Feedback Calling Agent
-Architecture: Twilio <-> Flask WebSocket <-> Gemini (text) + gTTS (speech)
-Since Gemini Live bidi API access is denied for this key, we use:
-  - Google Speech Recognition (STT) to transcribe caller audio
-  - Gemini text API to generate responses
-  - gTTS to convert responses to speech (u-law 8kHz for Twilio)
-"""
-
-import os
-import io
+﻿import os
+import uuid
 import json
-import base64
-import asyncio
-import miniaudio
+import re
+import time
 import threading
-import queue
-import logging
-import tempfile
+import subprocess
 import urllib.request
-from time import sleep
-from urllib.parse import quote, unquote
-from uuid import uuid4
-
-from flask import Flask, request, jsonify, Response, render_template
-from flask_sock import Sock
+from flask import Flask, request, jsonify, render_template, Response
+from twilio.rest import Client
+from twilio.twiml.voice_response import VoiceResponse
 from dotenv import load_dotenv
 
-from twilio.rest import Client
-from twilio.twiml.voice_response import VoiceResponse, Connect, Stream, Parameter
-
-from google import genai
-from google.genai import types as genai_types
-
-import speech_recognition as sr
-import miniaudio
-from gtts import gTTS
-
-try:
-    import audioop
-except ImportError:
-    import audioop_lts as audioop
-
-# ──────────────────────────────────────────────
-# CONFIG
-# ──────────────────────────────────────────────
 load_dotenv()
 
-TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID", "")
-TWILIO_AUTH_TOKEN  = os.getenv("TWILIO_AUTH_TOKEN", "")
-TWILIO_PHONE       = os.getenv("TWILIO_PHONE_NUMBER", "")
-GEMINI_API_KEY     = os.getenv("GEMINI_API_KEY", "")
-GEMINI_MODEL       = "gemini-2.5-flash"   # text-only, always works
+from google import genai
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
+# Initialize Gemini Client
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+gemini = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
-app  = Flask(__name__)
-sock = Sock(app)
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+VOICE = "Google.en-US-Chirp3-HD-Aoede"
+IS_VERCEL = bool(os.getenv("VERCEL") or os.getenv("VERCEL_ENV"))
 
+app = Flask(__name__)
+
+# Bypass warning headers for all responses
 @app.after_request
-def _no_ngrok_warning(r):
-    r.headers["ngrok-skip-browser-warning"] = "true"
-    return r
+def add_security_headers(response):
+    response.headers["ngrok-skip-browser-warning"] = "true"
+    response.headers["Bypass-Tunnel-Remainder"] = "true"
+    return response
 
-twilio_client  = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN) if TWILIO_ACCOUNT_SID else None
-gemini_client  = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
+# =========================
+# CONFIG & HYBRID DOMAIN ROUTING
+# =========================
+TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
+TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
+TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER")
 
-# ──────────────────────────────────────────────
-# IN-MEMORY STATE
-# ──────────────────────────────────────────────
-customers      = {}
-campaign_state = {"running": False}
+active_tunnel_url = ""
+cf_process = None
 
 def get_base_url():
+    """Returns live public HTTPS URL.
+    - Production (Vercel): uses request.host_url or VERCEL_URL or BASE_URL.
+    - Local: uses active Cloudflare/tunnel URL."""
+    # 1. Check Flask request context first
     try:
-        data = json.loads(urllib.request.urlopen("http://127.0.0.1:4040/api/tunnels", timeout=1).read())
-        for t in data.get("tunnels", []):
-            if t.get("public_url", "").startswith("https://"):
-                return t["public_url"].rstrip("/")
+        if request and request.host:
+            host = request.host.rstrip("/")
+            if not host.startswith("http"):
+                return f"https://{host}"
+            return host
     except Exception:
         pass
-    return os.getenv("BASE_URL", "").strip().rstrip("/")
 
-# ──────────────────────────────────────────────
-# CUSTOMER HELPERS
-# ──────────────────────────────────────────────
-def make_customer(name, phone, status="pending"):
-    return {"id": uuid4().hex[:8], "phone": phone, "name": name,
-            "status": status, "rating": None, "feedback": ""}
+    # 2. Check VERCEL_URL
+    v_url = os.getenv("VERCEL_URL")
+    if v_url:
+        v_url = v_url.rstrip("/")
+        return f"https://{v_url}" if not v_url.startswith("http") else v_url
 
-def find_customer(ident):
-    if not ident:
+    # 3. Check BASE_URL from env
+    base_env = os.getenv("BASE_URL", "").strip().rstrip("/")
+    if base_env:
+        return base_env
+
+    # 4. Fallback to active local tunnel URL
+    global active_tunnel_url
+    return active_tunnel_url
+
+def update_env_base_url(live_url):
+    """Auto-updates BASE_URL in .env file when running locally."""
+    if IS_VERCEL or not live_url:
+        return
+    env_path = os.path.join(os.path.dirname(__file__), ".env")
+    if not os.path.exists(env_path):
+        return
+    try:
+        with open(env_path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+        
+        updated = False
+        new_lines = []
+        for line in lines:
+            if line.strip().startswith("BASE_URL="):
+                new_lines.append(f"BASE_URL={live_url}\n")
+                updated = True
+            else:
+                new_lines.append(line)
+        
+        if not updated:
+            new_lines.append(f"\nBASE_URL={live_url}\n")
+            
+        with open(env_path, "w", encoding="utf-8") as f:
+            f.writelines(new_lines)
+        print(f"[Auto-Env] .env updated with BASE_URL={live_url}")
+    except Exception as e:
+        print(f"[Auto-Env Warning] {e}")
+
+def start_local_cloudflare_tunnel():
+    """Launches Cloudflare Free Tunnel locally (skipped automatically on Vercel)."""
+    global active_tunnel_url, cf_process
+    if IS_VERCEL:
         return None
-    ident = str(ident).strip()
-    if ident in customers:
-        return customers[ident]
-    for c in customers.values():
-        if c.get("id") == ident or c.get("phone") == ident:
-            return c
+
+    cf_bin = os.path.join(os.path.dirname(__file__), "cloudflared.exe")
+    if not os.path.exists(cf_bin):
+        return None
+
+    print("[Auto-Tunnel] Starting Cloudflare Free Tunnel via cloudflared.exe...")
+    try:
+        cf_process = subprocess.Popen([cf_bin, "tunnel", "--url", "http://127.0.0.1:5000"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        
+        start_t = time.time()
+        while time.time() - start_t < 12:
+            line = cf_process.stdout.readline()
+            if line and "trycloudflare.com" in line:
+                match = re.search(r"https://[a-zA-Z0-9-]+\.trycloudflare\.com", line)
+                if match:
+                    found_url = match.group(0)
+                    active_tunnel_url = found_url
+                    print("\n==========================================")
+                    print(f"[CLOUDFLARE TUNNEL SUCCESS] {found_url}")
+                    print("==========================================\n")
+                    update_env_base_url(found_url)
+                    return found_url
+    except Exception as err:
+        print(f"[Auto-Tunnel Error] {err}")
     return None
 
-# ──────────────────────────────────────────────
-# SYSTEM PROMPT
-# ──────────────────────────────────────────────
-SYSTEM_PROMPT = """You are Sarah, a friendly customer feedback agent for ABC Company.
-Your goal: collect a 1-5 star rating and brief feedback from the customer.
-Conversation flow:
-1. Greet warmly, introduce yourself, ask if they have a moment.
-2. Ask for a star rating (1-5).
-3. Ask what they liked or how to improve.
-4. Thank them and say goodbye.
-Rules: short replies (1-2 sentences), friendly, natural, conversational.
-If asked anything off-topic, steer back to feedback politely.
-Reply ONLY with what you would say aloud – no stage directions, no asterisks."""
+def ensure_tunnel():
+    """Master auto-tunnel initializer."""
+    if IS_VERCEL:
+        print("[Environment] Running on Vercel Serverless Production Engine.")
+        return os.getenv("BASE_URL", "")
 
-# ──────────────────────────────────────────────
-# AUDIO HELPERS
-# ──────────────────────────────────────────────
-SILENCE_THRESHOLD_BYTES = 160 * 50  # ~50 frames of silence before we process
+    cf_url = start_local_cloudflare_tunnel()
+    if cf_url:
+        return cf_url
 
-def ulaw_to_pcm16k(ulaw_bytes: bytes) -> bytes:
-    """G.711 u-law 8kHz -> 16kHz 16-bit PCM (for speech recognition)."""
-    pcm8  = audioop.ulaw2lin(ulaw_bytes, 2)
-    pcm16, _ = audioop.ratecv(pcm8, 2, 1, 8000, 16000, None)
-    return pcm16
+    fallback = os.getenv("BASE_URL", "").strip().rstrip("/")
+    global active_tunnel_url
+    active_tunnel_url = fallback
+    return fallback
 
-def pcm8_to_ulaw(pcm8: bytes) -> bytes:
-    return audioop.lin2ulaw(pcm8, 2)
+BASE_URL = ensure_tunnel()
+twilio = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN) if (TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN) else None
 
-def text_to_ulaw(text: str) -> bytes:
-    """Convert text -> gTTS MP3 -> 8kHz u-law bytes (Twilio-compatible)."""
-    try:
-        mp3_buf = io.BytesIO()
-        gTTS(text=text, lang="en", slow=False).write_to_fp(mp3_buf)
-        mp3_bytes = mp3_buf.getvalue()
-        # Decode MP3 -> PCM with miniaudio (no ffmpeg needed)
-        decoded = miniaudio.decode(mp3_bytes, output_format=miniaudio.SampleFormat.SIGNED16,
-                                   nchannels=1, sample_rate=8000)
-        pcm_bytes = bytes(decoded.samples)
-        return pcm8_to_ulaw(pcm_bytes)
-    except Exception as e:
-        logging.error("TTS conversion failed: %s", e)
-        return b""
+# =========================
+# STORAGE & SEED DATA
+# =========================
+customers = [
+    {
+        "id": "c101",
+        "name": "Sarah Jenkins",
+        "phone": "+919057262630",
+        "status": "completed",
+        "feedback": ["The service was wonderful! Quick delivery and friendly staff.", "I would rate it 5 stars."],
+        "rating": 5,
+        "sentiment": "Positive",
+        "transcript": [
+            {"speaker": "ai", "text": "Hello! This is Sarah calling from Feedback Ops. How was your experience with our service?"},
+            {"speaker": "customer", "text": "The service was wonderful! Quick delivery and friendly staff."},
+            {"speaker": "ai", "text": "That is so great to hear! How many stars out of 5 would you give us?"},
+            {"speaker": "customer", "text": "I would rate it 5 stars."},
+            {"speaker": "ai", "text": "Thank you so much for your feedback! Have a lovely day. Goodbye."}
+        ],
+        "created_at": "2026-08-12 10:15",
+        "last_call": "10:17 AM"
+    },
+    {
+        "id": "c102",
+        "name": "David Miller",
+        "phone": "+19164356173",
+        "status": "pending",
+        "feedback": [],
+        "rating": None,
+        "sentiment": "Neutral",
+        "transcript": [],
+        "created_at": "2026-08-12 11:30",
+        "last_call": None
+    },
+    {
+        "id": "c103",
+        "name": "Priya Sharma",
+        "phone": "+919876543210",
+        "status": "pending",
+        "feedback": [],
+        "rating": None,
+        "sentiment": "Neutral",
+        "transcript": [],
+        "created_at": "2026-08-12 11:45",
+        "last_call": None
+    }
+]
 
-def pcm16k_to_wav(pcm: bytes) -> bytes:
-    """Wrap raw 16kHz 16-bit PCM in a WAV container for SpeechRecognition."""
-    import struct
-    ch, sr_, sw = 1, 16000, 2
-    data_size   = len(pcm)
-    header = struct.pack(
-        "<4sI4s4sIHHIIHH4sI",
-        b"RIFF", 36 + data_size, b"WAVE",
-        b"fmt ", 16, 1, ch, sr_,
-        sr_ * ch * sw, ch * sw, sw * 8,
-        b"data", data_size
-    )
-    return header + pcm
+campaign_state = {
+    "running": False,
+    "current_id": None,
+    "last_dialed": None
+}
 
-def transcribe_pcm(pcm16k: bytes) -> str:
-    """Use Google Cloud STT (free tier) to transcribe 16kHz PCM."""
-    recognizer = sr.Recognizer()
-    wav_data   = pcm16k_to_wav(pcm16k)
-    audio_src  = sr.AudioData(wav_data, sample_rate=16000, sample_width=2)
-    try:
-        return recognizer.recognize_google(audio_src)
-    except sr.UnknownValueError:
-        return ""
-    except Exception as e:
-        logging.error("STT error: %s", e)
-        return ""
+def find_customer(customer_id=None, phone=None):
+    if customer_id:
+        c = next((item for item in customers if item["id"] == customer_id), None)
+        if c: return c
+    if phone:
+        clean_target = re.sub(r"\D", "", str(phone))
+        for item in customers:
+            clean_item = re.sub(r"\D", "", str(item.get("phone", "")))
+            if clean_item and (clean_item.endswith(clean_target) or clean_target.endswith(clean_item)):
+                return item
+    return None
 
-def gemini_reply(history: list, user_text: str) -> str:
-    """Get Gemini text response, maintaining conversation history."""
-    history.append(genai_types.Content(
-        role="user",
-        parts=[genai_types.Part(text=user_text)]
-    ))
-    try:
-        resp = gemini_client.models.generate_content(
-            model=GEMINI_MODEL,
-            contents=history,
-            config=genai_types.GenerateContentConfig(
-                system_instruction=SYSTEM_PROMPT,
-                max_output_tokens=200,
-                temperature=0.7
-            )
-        )
-        reply = resp.text.strip()
-    except Exception as e:
-        logging.error("Gemini error: %s", e)
-        reply = "I'm sorry, I missed that. Could you repeat?"
-    history.append(genai_types.Content(
-        role="model",
-        parts=[genai_types.Part(text=reply)]
-    ))
-    return reply
+def generate_ai_response(customer_text, customer=None):
+    """Generates conversational response via Gemini API with smart intelligent fallback."""
+    ai_text = ""
+    lower = customer_text.lower()
+    
+    if gemini:
+        try:
+            prompt = f"""
+You are Sarah, a warm and polite customer feedback phone agent.
+The customer said: "{customer_text}"
 
-# ──────────────────────────────────────────────
-# SEND HELPERS
-# ──────────────────────────────────────────────
-CHUNK_SIZE = 160  # 20ms at 8kHz
+Rules:
+1. Acknowledge what they said naturally.
+2. If they haven't given a 1 to 5 star rating yet, ask for a star rating.
+3. Keep your reply concise (maximum 20 words).
+4. Speak naturally without markdown or internal labels.
+"""
+            res = gemini.models.generate_content(model=GEMINI_MODEL, contents=prompt)
+            if res and res.text:
+                ai_text = res.text.strip()
+        except Exception as ex:
+            print(f"[Gemini API Exception] {ex}")
 
-def send_tts(ws, stream_sid: str, text: str):
-    """Convert text to speech and stream u-law audio to Twilio."""
-    logging.info("AI says: %s", text)
-    ulaw = text_to_ulaw(text)
-    if not ulaw:
-        return
-    # Send in chunks to avoid buffer overflow
-    for i in range(0, len(ulaw), CHUNK_SIZE * 100):
-        chunk = ulaw[i : i + CHUNK_SIZE * 100]
-        payload = base64.b64encode(chunk).decode("ascii")
-        ws.send(json.dumps({
-            "event": "media",
-            "streamSid": stream_sid,
-            "media": {"payload": payload}
-        }))
+    if not ai_text:
+        nums = re.findall(r"\b([1-5])\b", customer_text)
+        rating_num = int(nums[0]) if nums else (customer.get("rating") if customer else None)
+        
+        bye_words = ["bye", "goodbye", "thank you", "thanks", "that's all", "done", "no", "that is all"]
+        if any(w in lower for w in bye_words):
+            ai_text = "Thank you so much for your valuable feedback! Have a wonderful day. Goodbye!"
+        elif rating_num:
+            if rating_num >= 4:
+                ai_text = f"Thank you so much for giving us {rating_num} stars! We are delighted to hear your feedback."
+            else:
+                ai_text = f"Thank you for your {rating_num} star rating. We sincerely apologize for any inconvenience and will work to improve."
+        elif any(w in lower for w in ["good", "great", "excellent", "awesome", "amazing", "wonderful", "nice", "happy"]):
+            ai_text = "That is so wonderful to hear! How many stars out of 5 would you give our service?"
+        elif any(w in lower for w in ["bad", "poor", "slow", "worst", "terrible", "issue", "delay", "not good"]):
+            ai_text = "We are truly sorry to hear that. How many stars out of 5 would you rate your overall experience?"
+        else:
+            ai_text = "Thank you for sharing that with us! How would you rate your overall experience from 1 to 5 stars?"
 
-def send_clear(ws, stream_sid: str):
-    try:
-        ws.send(json.dumps({"event": "clear", "streamSid": stream_sid}))
-    except Exception:
-        pass
+    return ai_text
 
-# ──────────────────────────────────────────────
-# CALL STATE MACHINE
-# ──────────────────────────────────────────────
-SILENCE_FRAMES   = 40   # ~1 second of silence = flush audio for STT
-AUDIO_FRAME_RATE = 8000
-FRAME_SAMPLES    = 160  # 20ms per frame
+# =========================
+# CAMPAIGN WORKER THREAD (Only in non-Vercel environment)
+# =========================
+def campaign_loop():
+    while True:
+        try:
+            if campaign_state["running"]:
+                pending = next((c for c in customers if c["status"] == "pending"), None)
+                if pending:
+                    print(f"[Campaign Worker] Auto-dialing customer: {pending['name']} ({pending['phone']})")
+                    campaign_state["current_id"] = pending["id"]
+                    campaign_state["last_dialed"] = pending["name"]
+                    
+                    base = get_base_url()
+                    voice_url = f"{base}/api/twilio/voice?customer_id={pending['id']}"
+                    status_url = f"{base}/api/twilio/status?customer_id={pending['id']}"
+                    
+                    if twilio:
+                        try:
+                            pending["status"] = "calling"
+                            call = twilio.calls.create(
+                                to=pending["phone"],
+                                from_=TWILIO_PHONE_NUMBER,
+                                url=voice_url,
+                                method="POST",
+                                status_callback=status_url,
+                                status_callback_method="POST",
+                                status_callback_event=["initiated", "ringing", "answered", "completed"]
+                            )
+                            pending["call_sid"] = call.sid
+                        except Exception as ex:
+                            print(f"[Campaign Worker] Call creation failed: {ex}")
+                            pending["status"] = "failed"
+                    
+                    time.sleep(25)
+                else:
+                    print("[Campaign Worker] All customers processed. Stopping campaign.")
+                    campaign_state["running"] = False
+                    campaign_state["current_id"] = None
+        except Exception as err:
+            print(f"[Campaign Worker Error] {err}")
+        time.sleep(3)
 
-class CallSession:
-    def __init__(self, ws, customer_name: str, customer_phone: str):
-        self.ws             = ws
-        self.stream_sid     = None
-        self.customer_name  = customer_name
-        self.customer_phone = customer_phone
-        self.history        = []
-        self.audio_buf      = bytearray()
-        self.silence_count  = 0
-        self.speaking       = False
-        self.rating         = None
-        self.feedback_text  = ""
+if not IS_VERCEL:
+    threading.Thread(target=campaign_loop, daemon=True).start()
 
-    def on_start(self, stream_sid: str):
-        self.stream_sid = stream_sid
-        logging.info("Stream started: %s | %s (%s)", stream_sid, self.customer_name, self.customer_phone)
-        greeting = f"Hello! May I speak with {self.customer_name}? This is Sarah calling from ABC Company. Do you have a moment to share your feedback?"
-        send_tts(self.ws, stream_sid, greeting)
-        self.history.append(genai_types.Content(
-            role="model",
-            parts=[genai_types.Part(text=greeting)]
-        ))
-
-    def on_media(self, ulaw_b64: str):
-        ulaw  = base64.b64decode(ulaw_b64)
-        level = audioop.rms(audioop.ulaw2lin(ulaw, 2), 2)
-        if level > 200:   # active speech
-            self.speaking      = True
-            self.silence_count = 0
-            self.audio_buf    += ulaw
-        elif self.speaking:
-            self.silence_count += 1
-            self.audio_buf     += ulaw
-            if self.silence_count >= SILENCE_FRAMES:
-                # Caller stopped speaking – process utterance
-                self.speaking      = False
-                self.silence_count = 0
-                buf, self.audio_buf = bytes(self.audio_buf), bytearray()
-                threading.Thread(target=self._process_utterance, args=(buf,), daemon=True).start()
-
-    def _process_utterance(self, ulaw_buf: bytes):
-        pcm = ulaw_to_pcm16k(ulaw_buf)
-        text = transcribe_pcm(pcm)
-        if not text:
-            logging.info("(no speech detected)")
-            return
-        logging.info("Customer: %s", text)
-
-        # Simple rating/feedback extraction
-        import re
-        if self.rating is None:
-            nums = re.findall(r"\b([1-5])\b", text)
-            if nums:
-                self.rating = int(nums[0])
-                logging.info("Rating extracted: %d", self.rating)
-                c = find_customer(self.customer_phone) or find_customer(self.customer_name)
-                if c:
-                    c["rating"] = self.rating
-
-        if self.rating and not self.feedback_text and len(text.split()) > 3:
-            self.feedback_text = text
-            c = find_customer(self.customer_phone) or find_customer(self.customer_name)
-            if c:
-                c["feedback"] = self.feedback_text
-                c["status"]   = "completed"
-
-        reply = gemini_reply(self.history, text)
-        send_tts(self.ws, self.stream_sid, reply)
-
-# ──────────────────────────────────────────────
-# WEBSOCKET ENDPOINT
-# ──────────────────────────────────────────────
-@sock.route("/media")
-def media_ws(ws):
-    logging.info("Twilio WebSocket connected")
-    session: CallSession = None
-
-    try:
-        while True:
-            raw = ws.receive()
-            if raw is None:
-                break
-            try:
-                data = json.loads(raw)
-            except Exception:
-                continue
-
-            event = data.get("event")
-
-            if event == "connected":
-                logging.info("Twilio event: connected")
-
-            elif event == "start":
-                sd     = data.get("start", {})
-                sid    = sd.get("streamSid")
-                params = sd.get("customParameters", {})
-                name   = unquote(params.get("customer_name", "Customer"))
-                phone  = unquote(params.get("phone", ""))
-                c = find_customer(phone) or find_customer(name)
-                if c:
-                    c["status"] = "calling"
-                session = CallSession(ws, name, phone)
-                session.on_start(sid)
-
-            elif event == "media" and session:
-                payload = data.get("media", {}).get("payload", "")
-                if payload:
-                    session.on_media(payload)
-
-            elif event == "stop":
-                logging.info("Twilio event: stop")
-                if session:
-                    c = find_customer(session.customer_phone) or find_customer(session.customer_name)
-                    if c and c["status"] == "calling":
-                        c["status"] = "completed" if c.get("rating") else "pending"
-                break
-
-    except Exception as e:
-        logging.exception("WebSocket error: %s", e)
-    finally:
-        logging.info("WebSocket closed")
-
-# ──────────────────────────────────────────────
-# HTTP ROUTES
-# ──────────────────────────────────────────────
+# =========================
+# FRONTEND & HEALTH
+# =========================
 @app.route("/")
 def index():
     return render_template("index.html")
 
-@app.route("/health")
+@app.route("/api/health")
 def health():
-    return jsonify({"status": "healthy", "model": GEMINI_MODEL})
+    return jsonify({
+        "status": "ok",
+        "engine": "Gemini 2.5 Flash + Twilio Voice",
+        "voice": VOICE,
+        "environment": "Vercel Production" if IS_VERCEL else "Local Development",
+        "base_url": get_base_url()
+    })
 
-def _make_call(phone: str, name: str) -> str:
-    base = get_base_url()
-    url  = f"{base}/twilio/voice?customer_name={quote(name)}&phone={quote(phone)}"
-    call = twilio_client.calls.create(to=phone, from_=TWILIO_PHONE, url=url, method="POST")
-    logging.info("Call initiated: %s -> %s (%s)", call.sid, name, phone)
-    return call.sid
+# =========================
+# CUSTOMERS API
+# =========================
+@app.route("/api/customers", methods=["GET"])
+def get_customers():
+    return jsonify(customers)
 
+@app.route("/api/customers/<customer_id>", methods=["GET"])
+def get_customer_detail(customer_id):
+    c = find_customer(customer_id=customer_id)
+    if not c:
+        return jsonify({"success": False, "error": "Customer not found"}), 404
+    return jsonify({"success": True, "customer": c})
+
+@app.route("/api/customers", methods=["POST"])
+def add_customer():
+    data = request.get_json(force=True, silent=True) or {}
+    name = str(data.get("name", "")).strip()
+    phone = str(data.get("phone", "")).strip()
+
+    if not name or not phone:
+        return jsonify({"success": False, "error": "Name and phone number are required"}), 400
+
+    existing = find_customer(phone=phone)
+    if existing:
+        return jsonify({"success": False, "error": f"Customer with phone {phone} already exists ({existing['name']})"}), 400
+
+    new_id = f"c{int(time.time() % 100000)}"
+    customer = {
+        "id": new_id,
+        "name": name,
+        "phone": phone,
+        "status": "pending",
+        "feedback": [],
+        "rating": None,
+        "sentiment": "Neutral",
+        "transcript": [],
+        "created_at": time.strftime("%Y-%m-%d %H:%M"),
+        "last_call": None
+    }
+    customers.append(customer)
+    return jsonify({"success": True, "customer": customer}), 201
+
+@app.route("/api/customers/<customer_id>", methods=["DELETE"])
+def delete_customer(customer_id):
+    global customers
+    c = find_customer(customer_id=customer_id)
+    if not c:
+        return jsonify({"success": False, "error": "Customer not found"}), 404
+    customers = [item for item in customers if item["id"] != customer_id]
+    return jsonify({"success": True, "message": "Customer deleted successfully"})
+
+@app.route("/api/seed", methods=["POST"])
+def reset_seed_data():
+    global customers
+    customers.clear()
+    customers.extend([
+        {
+            "id": "c101",
+            "name": "Sarah Jenkins",
+            "phone": "+919057262630",
+            "status": "completed",
+            "feedback": ["The service was wonderful! Quick delivery and friendly staff.", "I would rate it 5 stars."],
+            "rating": 5,
+            "sentiment": "Positive",
+            "transcript": [
+                {"speaker": "ai", "text": "Hello! This is Sarah calling from Feedback Ops. How was your experience with our service?"},
+                {"speaker": "customer", "text": "The service was wonderful! Quick delivery and friendly staff."},
+                {"speaker": "ai", "text": "That is so great to hear! How many stars out of 5 would you give us?"},
+                {"speaker": "customer", "text": "I would rate it 5 stars."},
+                {"speaker": "ai", "text": "Thank you so much for your feedback! Have a lovely day. Goodbye."}
+            ],
+            "created_at": time.strftime("%Y-%m-%d %H:%M"),
+            "last_call": "Recent"
+        },
+        {
+            "id": "c102",
+            "name": "David Miller",
+            "phone": "+19164356173",
+            "status": "pending",
+            "feedback": [],
+            "rating": None,
+            "sentiment": "Neutral",
+            "transcript": [],
+            "created_at": time.strftime("%Y-%m-%d %H:%M"),
+            "last_call": None
+        },
+        {
+            "id": "c103",
+            "name": "Priya Sharma",
+            "phone": "+919876543210",
+            "status": "pending",
+            "feedback": [],
+            "rating": None,
+            "sentiment": "Neutral",
+            "transcript": [],
+            "created_at": time.strftime("%Y-%m-%d %H:%M"),
+            "last_call": None
+        }
+    ])
+    return jsonify({"success": True, "message": "Sample data reset successfully", "customers": customers})
+
+# =========================
+# MAKE CALL API
+# =========================
 @app.route("/api/call", methods=["POST"])
-def api_call():
-    data     = request.get_json(silent=True) or {}
-    customer = find_customer(data.get("customer_id"))
-    phone    = str(data.get("phone") or (customer or {}).get("phone") or "").strip()
-    name     = str(data.get("name")  or (customer or {}).get("name")  or "Customer").strip()
-    if not phone:
-        return jsonify({"success": False, "error": "Phone number required"}), 400
-    if not customer:
-        customer = make_customer(name, phone, "initiated")
-        customers[phone] = customer
-    else:
-        customer.update({"phone": phone, "name": name, "status": "initiated"})
+def make_call():
+    data = request.get_json(force=True, silent=True) or {}
+    customer_id = data.get("customer_id")
+    phone = data.get("phone")
+
+    customer = find_customer(customer_id=customer_id, phone=phone)
+    if customer_id and not customer:
+        return jsonify({"success": False, "error": "Customer ID not found"}), 404
+
+    target_phone = customer["phone"] if customer else phone
+    if not target_phone:
+        return jsonify({"success": False, "error": "Phone number or valid customer_id is required"}), 400
+
+    base = get_base_url()
+    cid_param = f"?customer_id={customer['id']}" if customer else f"?phone={urllib.parse.quote(target_phone)}"
+    voice_url = f"{base}/api/twilio/voice{cid_param}"
+    status_url = f"{base}/api/twilio/status{cid_param}"
+
+    print(f"[Initiate Call] Dialing {target_phone} via Voice URL: {voice_url}")
+
+    if not twilio:
+        if customer:
+            customer["status"] = "calling"
+        return jsonify({
+            "success": True,
+            "simulated": True,
+            "message": f"Twilio client not initialized with real SID/Token, simulated call status for {target_phone}."
+        })
+
     try:
-        sid = _make_call(phone, name)
-        customer.update({"call_sid": sid, "status": "calling"})
-        return jsonify({"success": True, "message": f"Calling {name}", "call_sid": sid, "phone": phone})
+        call = twilio.calls.create(
+            to=target_phone,
+            from_=TWILIO_PHONE_NUMBER,
+            url=voice_url,
+            method="POST",
+            status_callback=status_url,
+            status_callback_method="POST",
+            status_callback_event=["initiated", "ringing", "answered", "completed"]
+        )
+
+        if customer:
+            customer["status"] = "calling"
+            customer["call_sid"] = call.sid
+            customer["last_call"] = time.strftime("%H:%M:%S")
+
+        return jsonify({
+            "success": True,
+            "call_id": call.sid,
+            "status": call.status,
+            "message": f"AI call initiated to {customer['name'] if customer else target_phone}"
+        })
+
     except Exception as e:
-        logging.exception("Call failed: %s", e)
-        customer["status"] = "failed"
+        print(f"[Call Exception] {e}")
+        if customer:
+            customer["status"] = "failed"
         return jsonify({"success": False, "error": str(e)}), 500
 
-@app.route("/twilio/voice", methods=["GET", "POST"])
+# =========================
+# TWILIO VOICE WEBHOOK
+# =========================
+@app.route("/api/twilio/voice", methods=["POST", "GET"])
 def twilio_voice():
-    name  = request.args.get("customer_name", "Customer")
-    phone = request.args.get("phone", "")
-    base  = get_base_url()
-    ws_url = base.replace("https://", "wss://").replace("http://", "ws://")
-    resp = VoiceResponse()
-    connect = Connect()
-    stream  = Stream(url=f"{ws_url}/media")
-    stream.append(Parameter(name="customer_name", value=name))
-    stream.append(Parameter(name="phone", value=phone))
-    connect.append(stream)
-    resp.append(connect)
-    return Response(str(resp), mimetype="text/xml")
+    print("\n==========================================")
+    print(">>> TWILIO VOICE WEBHOOK CONNECTED")
+    print("==========================================")
 
-@app.route("/api/customers", methods=["GET", "POST"])
-def api_customers():
-    if request.method == "GET":
-        return jsonify(list(customers.values()))
-    data  = request.get_json(silent=True) or {}
-    name  = str(data.get("name", "")).strip()
-    phone = str(data.get("phone", "")).strip()
-    if not name or not phone:
-        return jsonify({"success": False, "error": "Name and phone required"}), 400
-    if phone in customers:
-        return jsonify({"success": False, "error": "Phone already registered"}), 409
-    c = make_customer(name, phone)
-    customers[phone] = c
-    return jsonify({"success": True, "customer": c}), 201
+    customer_id = request.args.get("customer_id")
+    phone = request.args.get("phone") or request.form.get("To") or request.form.get("From")
+    customer = find_customer(customer_id=customer_id, phone=phone)
 
+    if customer:
+        customer["status"] = "calling"
+
+    base = get_base_url()
+    cid_param = f"?customer_id={customer['id']}" if customer else ""
+    feedback_url = f"{base}/api/twilio/feedback{cid_param}"
+
+    response = VoiceResponse()
+
+    greeting_text = f"Hello {customer['name'] if customer else ''}! This is Sarah calling from Customer Operations. We would love to get your quick feedback today. How was your recent experience with our service?"
+    
+    response.say(greeting_text, voice=VOICE)
+
+    if customer:
+        customer["transcript"] = [{"speaker": "ai", "text": greeting_text}]
+
+    gather = response.gather(
+        input="speech",
+        action=feedback_url,
+        method="POST",
+        speech_timeout="auto",
+        language="en-IN"
+    )
+
+    gather.say("Please tell me about your experience.", voice=VOICE)
+
+    response.say("Thank you for your time. Goodbye!", voice=VOICE)
+    response.hangup()
+
+    return Response(str(response), status=200, content_type="text/xml")
+
+# =========================
+# TWILIO FEEDBACK WEBHOOK (AI CONVERSATION)
+# =========================
+@app.route("/api/twilio/feedback", methods=["POST"])
+def twilio_feedback():
+    print("\n>>> TWILIO FEEDBACK WEBHOOK HIT")
+
+    customer_id = request.args.get("customer_id")
+    called_phone = request.form.get("To") or request.form.get("From")
+    customer_text = request.form.get("SpeechResult", "").strip()
+
+    customer = find_customer(customer_id=customer_id, phone=called_phone)
+    print(f"Customer: {customer['name'] if customer else 'Unknown'} | Said: {customer_text!r}")
+
+    response = VoiceResponse()
+    base = get_base_url()
+    cid_param = f"?customer_id={customer['id']}" if customer else ""
+    feedback_url = f"{base}/api/twilio/feedback{cid_param}"
+
+    if not customer_text:
+        response.say("I didn't quite catch that. Could you please tell me about your experience?", voice=VOICE)
+        gather = response.gather(
+            input="speech",
+            action=feedback_url,
+            method="POST",
+            speech_timeout="auto",
+            language="en-IN"
+        )
+        gather.say("I am listening.", voice=VOICE)
+        return Response(str(response), status=200, content_type="text/xml")
+
+    if customer:
+        if not isinstance(customer.get("feedback"), list):
+            customer["feedback"] = []
+        customer["feedback"].append(customer_text)
+
+        if not isinstance(customer.get("transcript"), list):
+            customer["transcript"] = []
+        customer["transcript"].append({"speaker": "customer", "text": customer_text})
+
+        if customer.get("rating") is None:
+            nums = re.findall(r"\b([1-5])\b", customer_text)
+            if nums:
+                customer["rating"] = int(nums[0])
+                print(f"[Rating Extracted]: {customer['rating']} stars")
+
+        pos_words = ["good", "great", "excellent", "amazing", "wonderful", "awesome", "fast", "love", "nice", "5", "4"]
+        neg_words = ["bad", "poor", "terrible", "horrible", "slow", "delay", "worst", "hate", "1", "2"]
+        lower = customer_text.lower()
+        if any(w in lower for w in pos_words):
+            customer["sentiment"] = "Positive"
+        elif any(w in lower for w in neg_words):
+            customer["sentiment"] = "Negative"
+        else:
+            customer["sentiment"] = "Neutral"
+
+    ai_text = generate_ai_response(customer_text, customer)
+    print(f"AI Response: {ai_text!r}")
+
+    if customer:
+        customer["transcript"].append({"speaker": "ai", "text": ai_text})
+
+    bye_keywords = ["bye", "goodbye", "thank you", "thanks", "that's all", "done", "no", "that is all"]
+    is_closing = any(w in customer_text.lower() for w in bye_keywords)
+
+    response.say(ai_text, voice=VOICE)
+
+    if is_closing or (customer and customer.get("rating") is not None and len(customer.get("feedback", [])) >= 2):
+        response.say("Have a fantastic day! Goodbye.", voice=VOICE)
+        response.hangup()
+        if customer:
+            customer["status"] = "completed"
+    else:
+        gather = response.gather(
+            input="speech",
+            action=feedback_url,
+            method="POST",
+            speech_timeout="auto",
+            language="en-IN"
+        )
+        gather.say("Is there anything else you would like to add?", voice=VOICE)
+        response.say("Thank you for your feedback! Goodbye.", voice=VOICE)
+        response.hangup()
+
+    return Response(str(response), status=200, content_type="text/xml")
+
+# =========================
+# TWILIO CALL STATUS WEBHOOK
+# =========================
+@app.route("/api/twilio/status", methods=["POST"])
+def twilio_status():
+    customer_id = request.args.get("customer_id")
+    call_sid = request.form.get("CallSid", "")
+    call_status = request.form.get("CallStatus", "")
+    phone = request.form.get("To", "") or request.form.get("From", "")
+
+    print(f"[STATUS CALLBACK] SID={call_sid} | Status={call_status} | Target={phone}")
+
+    customer = find_customer(customer_id=customer_id, phone=phone)
+    if customer:
+        if call_status == "completed":
+            customer["status"] = "completed"
+        elif call_status in ("failed", "busy", "no-answer", "canceled"):
+            customer["status"] = "failed"
+        elif call_status in ("initiated", "ringing", "in-progress"):
+            customer["status"] = "calling"
+
+    return Response("OK", status=200)
+
+# =========================
+# CAMPAIGN API
+# =========================
 @app.route("/api/campaign", methods=["GET"])
-def api_campaign():
-    return jsonify({"success": True, "running": campaign_state["running"]})
+def get_campaign():
+    return jsonify({
+        "running": campaign_state["running"],
+        "current_id": campaign_state["current_id"],
+        "last_dialed": campaign_state["last_dialed"]
+    })
 
 @app.route("/api/campaign/start", methods=["POST"])
-def api_campaign_start():
+def start_campaign():
     campaign_state["running"] = True
-    return jsonify({"success": True, "running": True})
+    print("[Campaign API] Campaign Started!")
+    return jsonify({"success": True, "running": True, "message": "Autodialer campaign started"})
 
 @app.route("/api/campaign/stop", methods=["POST"])
-def api_campaign_stop():
+def stop_campaign():
     campaign_state["running"] = False
-    return jsonify({"success": True, "running": False})
+    campaign_state["current_id"] = None
+    print("[Campaign API] Campaign Stopped!")
+    return jsonify({"success": True, "running": False, "message": "Campaign stopped"})
 
-# ──────────────────────────────────────────────
-# CAMPAIGN WORKER
-# ──────────────────────────────────────────────
-def _campaign_worker():
-    while True:
-        try:
-            if campaign_state["running"]:
-                pending = next((c for c in customers.values() if c.get("status") in ("pending", "queued")), None)
-                if pending:
-                    pending["status"] = "initiated"
-                    try:
-                        sid = _make_call(pending["phone"], pending["name"])
-                        pending.update({"call_sid": sid, "status": "calling"})
-                    except Exception as e:
-                        logging.error("Campaign call error: %s", e)
-                        pending["status"] = "failed"
-                    sleep(20)
-                else:
-                    sleep(3)
-            else:
-                sleep(2)
-        except Exception as e:
-            logging.error("Campaign worker: %s", e)
-            sleep(5)
-
-threading.Thread(target=_campaign_worker, daemon=True).start()
-
-# ──────────────────────────────────────────────
-# SEED DATA
-# ──────────────────────────────────────────────
-_s = make_customer("Alex Johnson", "+919057262630")
-customers[_s["phone"]] = _s
-
-# ──────────────────────────────────────────────
-# MAIN
-# ──────────────────────────────────────────────
 if __name__ == "__main__":
-    base = get_base_url()
-    ws   = base.replace("https://", "wss://").replace("http://", "ws://")
-    print(f"\n{'='*45}")
-    print(" AI Customer Feedback Agent")
-    print(f"{'='*45}")
-    print(f" Base URL : {base}")
-    print(f" WebSocket: {ws}/media")
-    print(f" Model    : {GEMINI_MODEL} (text) + gTTS")
-    print(f"{'='*45}\n")
-    app.run(host="0.0.0.0", port=5000, debug=False, threaded=True)
+    app.run(host="0.0.0.0", port=5000, debug=True)

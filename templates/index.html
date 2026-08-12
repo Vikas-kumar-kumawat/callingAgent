@@ -1,151 +1,251 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Customer Feedback Calling Agent</title>
+    <title>AI Voice Feedback Agent | Autonomous Operations</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
-<div class="app-shell">
-    <aside class="sidebar">
-        <a class="brand" href="/">
-            <span class="brand-mark">Feedback</span>
-            <span>
-                <strong>Feedback AI Agent</strong>
-                <small>Voice Calling Ops</small>
-            </span>
-        </a>
 
-        <nav class="nav-list">
-            <a class="nav-item active" href="/">
-                <span class="nav-icon">01</span> Dashboard
+<div class="app-container">
+    <!-- Sidebar Navigation -->
+    <aside class="sidebar">
+        <div class="brand">
+            <div class="brand-icon">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
+            </div>
+            <div class="brand-text">
+                <span class="brand-title">AURA VOICE</span>
+                <span class="brand-subtitle">AI Feedback Ops</span>
+            </div>
+        </div>
+
+        <nav class="nav-menu">
+            <a class="nav-link active" href="#dashboard">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+                <span>Dashboard</span>
             </a>
-            <a class="nav-item" href="#customers">
-                <span class="nav-icon">02</span> Customers
+            <a class="nav-link" href="#customers">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+                <span>Customer Ops</span>
             </a>
-            <a class="nav-item" href="#new-customer">
-                <span class="nav-icon">03</span> Add Customer
+            <a class="nav-link" href="#new-customer">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                <span>Add Customer</span>
             </a>
         </nav>
 
-        <div class="sidebar-note">
-            <span class="note-label">Voice Engine</span>
-            <strong>Gemini Live + Twilio</strong>
+        <div class="system-status-card">
+            <div class="status-header">
+                <span class="pulse-dot active"></span>
+                <span>AI VOICE ENGINE</span>
+            </div>
+            <div class="status-body">
+                <strong>Gemini 2.5 + Chirp3 HD</strong>
+                <small id="ngrokStatusText">Detecting Ngrok Tunnel...</small>
+            </div>
         </div>
     </aside>
 
-    <main class="main-panel">
+    <!-- Main Content Area -->
+    <main class="main-content">
+        <!-- Top Navigation Header -->
         <header class="topbar">
-            <div>
-                <p class="eyebrow">Customer Operations</p>
-                <h1>Feedback Call Center</h1>
+            <div class="topbar-title">
+                <span class="badge-tag">AUTONOMOUS CALLING AGENT</span>
+                <h1>Customer Voice Intelligence</h1>
             </div>
 
-            <div class="campaign-controls">
-                <span id="campaignStatus" class="campaign-status stopped">Stopped</span>
-                <button id="startCampaignBtn" class="btn success" type="button">Start Campaign</button>
-                <button id="stopCampaignBtn" class="btn danger" type="button">Stop</button>
+            <div class="campaign-bar">
+                <div class="campaign-info">
+                    <span class="label">AUTODIALER STATUS</span>
+                    <div id="campaignStatusBadge" class="status-pill stopped">
+                        <span class="pulse-dot"></span>
+                        <span id="campaignStatusLabel">Stopped</span>
+                    </div>
+                </div>
+                <button id="startCampaignBtn" class="btn btn-success" type="button">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                    Start Campaign
+                </button>
+                <button id="stopCampaignBtn" class="btn btn-danger" type="button">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="6" y="6" width="12" height="12"></rect></svg>
+                    Stop
+                </button>
             </div>
         </header>
 
-        <section class="stats-grid">
-            <article class="stat-card">
-                <span>Total Customers</span>
-                <strong id="totalCustomers">0</strong>
-            </article>
-            <article class="stat-card">
-                <span>Pending Calls</span>
-                <strong id="pendingCustomers">0</strong>
-            </article>
-            <article class="stat-card">
-                <span>Feedback Collected</span>
-                <strong id="completedCustomers">0</strong>
-            </article>
-            <article class="stat-card">
-                <span>Average Rating</span>
-                <strong id="averageRating">-</strong>
-            </article>
-        </section>
-
-        <section id="new-customer" class="workspace-section">
-            <div class="section-title">
-                <div>
-                    <h2>Add Customer</h2>
-                    <p>Queue a customer to receive an AI feedback call.</p>
+        <!-- KPI Metrics Grid -->
+        <section id="dashboard" class="metrics-grid">
+            <div class="metric-card">
+                <div class="metric-icon blue">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle></svg>
+                </div>
+                <div class="metric-data">
+                    <span class="metric-label">Total Customers</span>
+                    <strong id="totalCustomers" class="metric-value">0</strong>
                 </div>
             </div>
 
-            <form id="customerForm" class="customer-form">
-                <label>
-                    <span>Name</span>
-                    <input id="customerName" name="name" type="text" placeholder="Customer Name" required>
-                </label>
-
-                <label>
-                    <span>Phone Number</span>
-                    <input id="customerPhone" name="phone" type="tel" placeholder="+919057262630" required>
-                </label>
-
-                <button id="addCustomerBtn" class="btn primary" type="submit">Add Customer</button>
-            </form>
-        </section>
-
-        <section id="customers" class="workspace-section">
-            <div class="section-title customer-toolbar">
-                <div>
-                    <h2>Customer Database</h2>
-                    <p>Track call progress and real-time customer feedback.</p>
+            <div class="metric-card">
+                <div class="metric-icon yellow">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
                 </div>
-
-                <div class="toolbar-actions">
-                    <label class="search-box">
-                        <span class="sr-only">Search</span>
-                        <input id="customerSearch" type="search" placeholder="Search customer or phone">
-                    </label>
-
-                    <label class="select-box">
-                        <span class="sr-only">Filter</span>
-                        <select id="statusFilter">
-                            <option value="all">All Status</option>
-                            <option value="pending">Waiting</option>
-                            <option value="calling">Calling</option>
-                            <option value="completed">Completed</option>
-                            <option value="failed">Failed</option>
-                        </select>
-                    </label>
-
-                    <button id="refreshBtn" class="btn secondary icon-btn" type="button" title="Refresh">↻</button>
+                <div class="metric-data">
+                    <span class="metric-label">Pending Queue</span>
+                    <strong id="pendingCustomers" class="metric-value">0</strong>
                 </div>
             </div>
 
-            <div class="table-frame">
-                <table>
+            <div class="metric-card">
+                <div class="metric-icon green">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+                </div>
+                <div class="metric-data">
+                    <span class="metric-label">Calls Completed</span>
+                    <strong id="completedCustomers" class="metric-value">0</strong>
+                </div>
+            </div>
+
+            <div class="metric-card">
+                <div class="metric-icon purple">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+                </div>
+                <div class="metric-data">
+                    <span class="metric-label">Avg Rating Score</span>
+                    <strong id="averageRating" class="metric-value">-</strong>
+                </div>
+            </div>
+        </section>
+
+        <!-- Customer Operations & Real-time Database -->
+        <section id="customers" class="panel-section">
+            <div class="panel-header">
+                <div>
+                    <h2>Customer Queue & Call Operations</h2>
+                    <p>Trigger AI voice calls, inspect live transcripts, and capture customer satisfaction.</p>
+                </div>
+
+                <div class="panel-actions">
+                    <div class="search-input-wrap">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                        <input id="customerSearch" type="search" placeholder="Search name or phone...">
+                    </div>
+
+                    <select id="statusFilter" class="select-input">
+                        <option value="all">All Status</option>
+                        <option value="pending">Waiting Queue</option>
+                        <option value="calling">In Active Call</option>
+                        <option value="completed">Call Completed</option>
+                        <option value="failed">Failed / No Answer</option>
+                    </select>
+
+                    <button id="refreshBtn" class="btn btn-secondary icon-only" title="Refresh Data">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+                    </button>
+
+                    <button id="resetSeedBtn" class="btn btn-outline" title="Reset Sample Data">Reset Sample Data</button>
+                </div>
+            </div>
+
+            <div class="table-container">
+                <table class="data-table">
                     <thead>
                         <tr>
-                            <th>Customer</th>
-                            <th>Phone</th>
-                            <th>Status</th>
-                            <th>Rating</th>
-                            <th>Feedback Notes</th>
-                            <th>Action</th>
+                            <th>Customer Info</th>
+                            <th>Phone Number</th>
+                            <th>Call Status</th>
+                            <th>Satisfaction</th>
+                            <th>Spoken Feedback & Sentiment</th>
+                            <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody id="customerTable">
                         <tr>
-                            <td colspan="6" class="empty-cell">Loading customers...</td>
+                            <td colspan="6" class="state-cell">Loading customer intelligence...</td>
                         </tr>
                     </tbody>
                 </table>
             </div>
         </section>
+
+        <!-- Add Customer Form -->
+        <section id="new-customer" class="panel-section grid-split">
+            <div class="form-intro">
+                <h2>Queue New Customer</h2>
+                <p>Add a customer phone number to initiate an immediate AI Voice Feedback call or include them in the automated campaign queue.</p>
+                <div class="info-box">
+                    <span class="info-title">Voice Call Flow</span>
+                    <ul>
+                        <li>Sarah (AI Agent) greets the customer warmly.</li>
+                        <li>Collects overall experience & 1-5 star rating.</li>
+                        <li>Analyzes sentiment & saves full transcript in real-time.</li>
+                    </ul>
+                </div>
+            </div>
+
+            <form id="customerForm" class="glass-form">
+                <div class="form-group">
+                    <label for="customerName">Full Name</label>
+                    <input id="customerName" name="name" type="text" placeholder="e.g. Alex Morgan" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="customerPhone">Phone Number (with Country Code)</label>
+                    <input id="customerPhone" name="phone" type="tel" placeholder="+919057262630" required>
+                </div>
+
+                <button id="addCustomerBtn" class="btn btn-primary btn-block" type="submit">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                    Add to Call Queue
+                </button>
+            </form>
+        </section>
     </main>
 </div>
 
-<div id="toast" class="toast" role="status" aria-live="polite"></div>
+<!-- Modal Drawer for Live Call & Transcript Inspection -->
+<div id="transcriptModal" class="modal-overlay">
+    <div class="modal-card">
+        <div class="modal-header">
+            <div>
+                <span class="modal-subtitle">REAL-TIME CALL INTELLIGENCE</span>
+                <h3 id="modalCustomerName">Customer Call Transcript</h3>
+            </div>
+            <button id="closeModalBtn" class="close-btn">&times;</button>
+        </div>
+
+        <div class="modal-body">
+            <div class="call-banner">
+                <div class="call-status-indicator">
+                    <span class="waveform">
+                        <span></span><span></span><span></span><span></span>
+                    </span>
+                    <span id="modalCallStatus">Active Session</span>
+                </div>
+                <div class="call-meta">
+                    <span id="modalCustomerPhone">+91 ...</span>
+                    <span id="modalCustomerSentiment" class="sentiment-tag neutral">Neutral</span>
+                </div>
+            </div>
+
+            <div class="transcript-box" id="transcriptConversation">
+                <div class="transcript-empty">No conversation recorded yet. Initiate a call to see live transcript.</div>
+            </div>
+        </div>
+        
+        <div class="modal-footer">
+            <button id="modalCallBtn" class="btn btn-success">Start AI Call Now</button>
+            <button id="modalCloseFooterBtn" class="btn btn-secondary">Close Inspector</button>
+        </div>
+    </div>
+</div>
+
+<div id="toast" class="toast-notification"></div>
 
 <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>

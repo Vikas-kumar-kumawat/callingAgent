@@ -1,5 +1,4 @@
-```gitignore
-# Python
+﻿# Python
 __pycache__/
 *.py[cod]
 *.pyo
@@ -10,35 +9,24 @@ venv/
 env/
 ENV/
 
-# Environment variables / secrets
+# Environment variables & secrets
 .env
-.env.*
+.env.local
 !.env.example
 
-# IDE / editors
+# Binaries & executables
+cloudflared.exe
+*.exe
+
+# IDE & OS
 .vscode/
 .idea/
-
-# OS files
 .DS_Store
 Thumbs.db
 
-# Logs
+# Logs & build
 *.log
-
-# Testing / coverage
-.pytest_cache/
-.coverage
-htmlcov/
-
-# Build files
 build/
 dist/
 *.egg-info/
-
-# Flask
-instance/
-
-# Local development
-.ngrok/
-```
+.vercel
