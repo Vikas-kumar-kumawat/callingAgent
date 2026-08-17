@@ -1,175 +1,217 @@
 import os
-import uuid
-import json
 import re
 import time
-import threading
+import json
 import subprocess
+import urllib.parse
 import urllib.request
+import threading
+from typing import Dict, Any, List, Optional
 from flask import Flask, request, jsonify, render_template, Response
 from twilio.rest import Client
 from twilio.twiml.voice_response import VoiceResponse
 from dotenv import load_dotenv
-
-load_dotenv()
-
 from google import genai
 
-# Initialize Gemini Client
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-gemini = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
-
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-
-VOICE_CATALOG = [
-    # --- FEMALE VOICES ---
-    {
-        "id": "Google.en-US-Chirp3-HD-Aoede",
-        "name": "Sarah (Chirp3 Ultra-HD Female - US)",
-        "accent": "US English",
-        "gender": "Female",
-        "sample_text": "Hello! I am Sarah, your AI Voice Assistant. How can I help you today?"
-    },
-    {
-        "id": "Google.en-US-Journey-F",
-        "name": "Emma (Journey Neural Female - US)",
-        "accent": "US English",
-        "gender": "Female",
-        "sample_text": "Hi there! I am Emma. I use hyper-realistic natural speech inflections and conversational dynamics."
-    },
-    {
-        "id": "Google.en-IN-Wavenet-D",
-        "name": "Priya (Wavenet Neural Female - India)",
-        "accent": "Indian English",
-        "gender": "Female",
-        "sample_text": "Namaste! I am Priya. I deliver warm, polite, and respectful customer feedback calls."
-    },
-    {
-        "id": "Google.en-GB-Studio-B",
-        "name": "Victoria (Studio Premium Female - UK British)",
-        "accent": "British English",
-        "gender": "Female",
-        "sample_text": "Good day! I am Victoria. I provide a sophisticated and professional British voice experience."
-    },
-    {
-        "id": "Google.en-US-Chirp3-HD-Kore",
-        "name": "Chloe (Chirp3 Ultra-HD Female - Soft & Friendly)",
-        "accent": "US English",
-        "gender": "Female",
-        "sample_text": "Hello! I am Chloe. I offer a gentle, friendly, and reassuring conversational tone."
-    },
-
-    # --- MALE VOICES ---
-    {
-        "id": "Google.en-US-Chirp3-HD-Fenrir",
-        "name": "Alex (Chirp3 Ultra-HD Male - US)",
-        "accent": "US English",
-        "gender": "Male",
-        "sample_text": "Hello! This is Alex. I am ready to handle your outbound customer feedback operations."
-    },
-    {
-        "id": "Google.en-US-Journey-D",
-        "name": "Marcus (Journey Deep Male - US)",
-        "accent": "US English",
-        "gender": "Male",
-        "sample_text": "Greetings! I am Marcus, your AI customer operations specialist with a deep, authoritative voice."
-    },
-    {
-        "id": "Google.en-IN-Wavenet-B",
-        "name": "Rohan (Wavenet Neural Male - India)",
-        "accent": "Indian English",
-        "gender": "Male",
-        "sample_text": "Hello! I am Rohan. I bring a clear, polite, and professional Indian male voice persona."
-    },
-    {
-        "id": "Google.en-GB-Studio-C",
-        "name": "Oliver (Studio Premium Male - UK British)",
-        "accent": "British English",
-        "gender": "Male",
-        "sample_text": "Hello there! I am Oliver, offering a crisp, refined British male voice for your survey calls."
-    },
-    {
-        "id": "Google.en-US-Chirp3-HD-Puck",
-        "name": "Ethan (Chirp3 Ultra-HD Male - Dynamic)",
-        "accent": "US English",
-        "gender": "Male",
-        "sample_text": "Hey there! I am Ethan, your energetic and engaging voice AI assistant."
-    }
-]
-
-ACTIVE_VOICE = "Google.en-IN-Wavenet-B"
-
-def get_active_agent_info():
-    global ACTIVE_VOICE
-    v_info = next((v for v in VOICE_CATALOG if v["id"] == ACTIVE_VOICE), VOICE_CATALOG[0])
-    agent_name = v_info["name"].split(" ")[0]
-    return {
-        "voice_id": ACTIVE_VOICE,
-        "agent_name": agent_name,
-        "info": v_info
-    }
-
-def get_active_voice():
-    return get_active_agent_info()["voice_id"]
-
-def get_active_agent_name():
-    return get_active_agent_info()["agent_name"]
+load_dotenv()
 
 # Environment Detection
 IS_RENDER = bool(os.getenv("RENDER") or os.getenv("RENDER_EXTERNAL_HOSTNAME"))
 IS_VERCEL = bool(os.getenv("VERCEL") or os.getenv("VERCEL_ENV") or os.getenv("AWS_LAMBDA_FUNCTION_NAME"))
 IS_CLOUD_PROD = IS_RENDER or IS_VERCEL or (os.name != "nt")
 
+# Client Initializations
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+gemini = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
+
+TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
+TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
+TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER")
+twilio = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN) if (TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN) else None
+
 app = Flask(__name__)
 
-# Bypass warning headers for all responses
+
 @app.after_request
 def add_security_headers(response):
     response.headers["ngrok-skip-browser-warning"] = "true"
     response.headers["Bypass-Tunnel-Remainder"] = "true"
     return response
 
-# =========================
-# CONFIG & HYBRID DOMAIN ROUTING
-# =========================
-TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
-TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
-TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER")
 
+# =========================
+# VOICE CATALOG & CONFIG
+# =========================
+VOICE_CATALOG: List[Dict[str, str]] = [
+    # Female Voices
+    {
+        "id": "Google.en-US-Chirp3-HD-Aoede",
+        "name": "Sarah (Chirp3 Ultra-HD Female - US)",
+        "accent": "US English",
+        "gender": "Female",
+        "sample_text": "Hello! I am Sarah, your AI Voice Assistant. How can I help you today?",
+    },
+    {
+        "id": "Google.en-US-Journey-F",
+        "name": "Emma (Journey Neural Female - US)",
+        "accent": "US English",
+        "gender": "Female",
+        "sample_text": "Hi there! I am Emma. I use hyper-realistic natural speech inflections and conversational dynamics.",
+    },
+    {
+        "id": "Google.en-IN-Wavenet-D",
+        "name": "Priya (Wavenet Neural Female - India)",
+        "accent": "Indian English",
+        "gender": "Female",
+        "sample_text": "Namaste! I am Priya. I deliver warm, polite, and respectful customer feedback calls.",
+    },
+    {
+        "id": "Google.en-GB-Studio-B",
+        "name": "Victoria (Studio Premium Female - UK British)",
+        "accent": "British English",
+        "gender": "Female",
+        "sample_text": "Good day! I am Victoria. I provide a sophisticated and professional British voice experience.",
+    },
+    {
+        "id": "Google.en-US-Chirp3-HD-Kore",
+        "name": "Chloe (Chirp3 Ultra-HD Female - Soft & Friendly)",
+        "accent": "US English",
+        "gender": "Female",
+        "sample_text": "Hello! I am Chloe. I offer a gentle, friendly, and reassuring conversational tone.",
+    },
+    # Male Voices
+    {
+        "id": "Google.en-US-Chirp3-HD-Fenrir",
+        "name": "Alex (Chirp3 Ultra-HD Male - US)",
+        "accent": "US English",
+        "gender": "Male",
+        "sample_text": "Hello! This is Alex. I am ready to handle your outbound customer feedback operations.",
+    },
+    {
+        "id": "Google.en-US-Journey-D",
+        "name": "Marcus (Journey Deep Male - US)",
+        "accent": "US English",
+        "gender": "Male",
+        "sample_text": "Greetings! I am Marcus, your AI customer operations specialist with a deep, authoritative voice.",
+    },
+    {
+        "id": "Google.en-IN-Wavenet-B",
+        "name": "Rohan (Wavenet Neural Male - India)",
+        "accent": "Indian English",
+        "gender": "Male",
+        "sample_text": "Hello! I am Rohan. I bring a clear, polite, and professional Indian male voice persona.",
+    },
+    {
+        "id": "Google.en-GB-Studio-C",
+        "name": "Oliver (Studio Premium Male - UK British)",
+        "accent": "British English",
+        "gender": "Male",
+        "sample_text": "Hello there! I am Oliver, offering a crisp, refined British male voice for your survey calls.",
+    },
+    {
+        "id": "Google.en-US-Chirp3-HD-Puck",
+        "name": "Ethan (Chirp3 Ultra-HD Male - Dynamic)",
+        "accent": "US English",
+        "gender": "Male",
+        "sample_text": "Hey there! I am Ethan, your energetic and engaging voice AI assistant.",
+    },
+]
+
+ACTIVE_VOICE = "Google.en-IN-Wavenet-B"
+
+
+def get_active_agent_info() -> Dict[str, Any]:
+    """Retrieves active voice catalog record and agent name."""
+    global ACTIVE_VOICE
+    v_info = next((v for v in VOICE_CATALOG if v["id"] == ACTIVE_VOICE), VOICE_CATALOG[0])
+    return {
+        "voice_id": ACTIVE_VOICE,
+        "agent_name": v_info["name"].split(" ")[0],
+        "info": v_info,
+    }
+
+
+def get_active_voice() -> str:
+    """Returns active voice identifier string."""
+    return ACTIVE_VOICE
+
+
+def get_active_agent_name() -> str:
+    """Returns active agent display name."""
+    return get_active_agent_info()["agent_name"]
+
+
+# =========================
+# DYNAMIC TUNNEL MANAGEMENT
+# =========================
 active_tunnel_url = ""
-cf_process = None
 
-def get_base_url():
-    """Returns live public HTTPS URL."""
+
+def is_public_host(host: str) -> bool:
+    """Checks if a hostname/host string is a public address and not local/LAN."""
+    if not host:
+        return False
+    clean = host.strip().lower()
+    if clean.startswith("http://") or clean.startswith("https://"):
+        clean = urllib.parse.urlparse(clean).netloc
+    clean_host = clean.split(":")[0]
+    if clean_host in ("localhost", "127.0.0.1", "0.0.0.0", "::1") or clean_host.endswith(".local"):
+        return False
+    if clean_host.startswith("192.168.") or clean_host.startswith("10."):
+        return False
+    if clean_host.startswith("172."):
+        parts = clean_host.split(".")
+        if len(parts) >= 2 and parts[1].isdigit() and 16 <= int(parts[1]) <= 31:
+            return False
+    return True
+
+
+def get_base_url() -> str:
+    """Returns live public HTTPS URL from cloud env, active tunnel, BASE_URL, or request host."""
     r_host = os.getenv("RENDER_EXTERNAL_HOSTNAME")
     if r_host:
         r_host = r_host.rstrip("/")
         return f"https://{r_host}" if not r_host.startswith("http") else r_host
-
-    try:
-        if request and request.host:
-            host = request.host.rstrip("/")
-            if not host.startswith("http"):
-                return f"https://{host}"
-            return host
-    except Exception:
-        pass
 
     v_url = os.getenv("VERCEL_URL")
     if v_url:
         v_url = v_url.rstrip("/")
         return f"https://{v_url}" if not v_url.startswith("http") else v_url
 
+    if active_tunnel_url:
+        return active_tunnel_url
+
     base_env = os.getenv("BASE_URL", "").strip().rstrip("/")
+    if base_env and is_public_host(base_env):
+        return base_env
+
+    try:
+        if request and request.host:
+            host = request.host.rstrip("/")
+            if is_public_host(host):
+                return host if host.startswith("http") else f"https://{host}"
+    except Exception:
+        pass
+
     if base_env:
         return base_env
 
-    global active_tunnel_url
-    return active_tunnel_url
+    try:
+        if request and request.host:
+            return f"http://{request.host.rstrip('/')}"
+    except Exception:
+        pass
 
-def update_env_base_url(live_url):
-    """Auto-updates BASE_URL in .env file when running locally."""
-    if IS_CLOUD_PROD or not live_url:
+    return "http://127.0.0.1:5000"
+
+
+def update_env_base_url(live_url: str) -> None:
+    """Auto-updates BASE_URL key in local .env file and environment."""
+    if not live_url:
+        return
+    os.environ["BASE_URL"] = live_url
+    if IS_CLOUD_PROD:
         return
     env_path = os.path.join(os.path.dirname(__file__), ".env")
     if not os.path.exists(env_path):
@@ -177,7 +219,7 @@ def update_env_base_url(live_url):
     try:
         with open(env_path, "r", encoding="utf-8") as f:
             lines = f.readlines()
-        
+
         updated = False
         new_lines = []
         for line in lines:
@@ -186,19 +228,123 @@ def update_env_base_url(live_url):
                 updated = True
             else:
                 new_lines.append(line)
-        
+
         if not updated:
             new_lines.append(f"\nBASE_URL={live_url}\n")
-            
+
         with open(env_path, "w", encoding="utf-8") as f:
             f.writelines(new_lines)
         print(f"[Auto-Env] .env updated with BASE_URL={live_url}")
     except Exception as e:
         print(f"[Auto-Env Warning] {e}")
 
-def start_local_cloudflare_tunnel():
-    """Launches Cloudflare Free Tunnel locally (skipped automatically on Render / Vercel)."""
-    global active_tunnel_url, cf_process
+
+def kill_zombie_cloudflared() -> None:
+    """Terminates lingering cloudflared processes on Windows."""
+    if os.name == "nt":
+        try:
+            subprocess.run(
+                ["taskkill", "/F", "/IM", "cloudflared.exe"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except Exception:
+            pass
+
+
+def _drain_process_stdout(proc: subprocess.Popen) -> None:
+    """Reads stdout continuously in background to prevent buffer fill deadlock."""
+    try:
+        while proc.poll() is None and proc.stdout:
+            line = proc.stdout.readline()
+            if not line:
+                break
+    except Exception:
+        pass
+
+
+def start_ssh_tunnel() -> Optional[str]:
+    """Tries SSH-based tunnel providers (serveo.net -> localhost.run)."""
+    global active_tunnel_url
+    if IS_CLOUD_PROD:
+        return None
+
+    try:
+        subprocess.run(["ssh", "-V"], capture_output=True, text=True, timeout=5, check=True)
+    except Exception:
+        return None
+
+    providers = [
+        {
+            "name": "localhost.run",
+            "cmd": [
+                "ssh",
+                "-o",
+                "StrictHostKeyChecking=no",
+                "-o",
+                "ServerAliveInterval=30",
+                "-o",
+                "ConnectTimeout=15",
+                "-R",
+                "80:127.0.0.1:5000",
+                "nokey@localhost.run",
+            ],
+            "pattern": r"https://[a-zA-Z0-9.-]+\.lhr\.life",
+            "keyword": "lhr.life",
+        },
+        {
+            "name": "serveo.net",
+            "cmd": [
+                "ssh",
+                "-o",
+                "StrictHostKeyChecking=no",
+                "-o",
+                "ServerAliveInterval=30",
+                "-o",
+                "ConnectTimeout=15",
+                "-R",
+                "80:127.0.0.1:5000",
+                "serveo.net",
+            ],
+            "pattern": r"https://[a-zA-Z0-9.-]+\.serveo\.net",
+            "keyword": "serveo.net",
+        },
+    ]
+
+    for provider in providers:
+        try:
+            proc = subprocess.Popen(
+                provider["cmd"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+            )
+            start_t = time.time()
+            found_url = None
+            while time.time() - start_t < 20:
+                line = proc.stdout.readline()
+                if not line:
+                    break
+                if provider["keyword"] in line:
+                    match = re.search(provider["pattern"], line)
+                    if match:
+                        found_url = match.group(0)
+                        active_tunnel_url = found_url
+                        print(f"[{provider['name'].upper()} TUNNEL SUCCESS] {found_url}")
+                        update_env_base_url(found_url)
+                        threading.Thread(target=_drain_process_stdout, args=(proc,), daemon=True).start()
+                        return found_url
+            if not found_url:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+        except Exception as err:
+            print(f"[Auto-Tunnel {provider['name']} Error] {err}")
+
+    return None
+
+
+def start_local_cloudflare_tunnel() -> Optional[str]:
+    """Launches local Cloudflare Free Tunnel via cloudflared.exe."""
+    global active_tunnel_url
     if IS_CLOUD_PROD:
         return None
 
@@ -206,132 +352,215 @@ def start_local_cloudflare_tunnel():
     if not os.path.exists(cf_bin):
         return None
 
-    print("[Auto-Tunnel] Starting Cloudflare Free Tunnel via cloudflared.exe...")
+    kill_zombie_cloudflared()
+    time.sleep(1)
+
     try:
-        cf_process = subprocess.Popen([cf_bin, "tunnel", "--url", "http://127.0.0.1:5000"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-        
+        proc = subprocess.Popen(
+            [cf_bin, "tunnel", "--url", "http://127.0.0.1:5000"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
         start_t = time.time()
-        while time.time() - start_t < 12:
-            line = cf_process.stdout.readline()
-            if line and "trycloudflare.com" in line:
+        found_url = None
+        while time.time() - start_t < 20:
+            line = proc.stdout.readline()
+            if not line:
+                break
+            if any(err in line for err in ["429", "Too Many Requests", "error code: 1015"]):
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+                return None
+            if "trycloudflare.com" in line:
                 match = re.search(r"https://[a-zA-Z0-9-]+\.trycloudflare\.com", line)
                 if match:
                     found_url = match.group(0)
                     active_tunnel_url = found_url
-                    print("\n==========================================")
                     print(f"[CLOUDFLARE TUNNEL SUCCESS] {found_url}")
-                    print("==========================================\n")
                     update_env_base_url(found_url)
+                    threading.Thread(target=_drain_process_stdout, args=(proc,), daemon=True).start()
                     return found_url
     except Exception as err:
         print(f"[Auto-Tunnel Error] {err}")
+
     return None
 
-def ensure_tunnel():
-    """Master auto-tunnel initializer."""
+
+def start_localtunnel() -> Optional[str]:
+    """Launches localtunnel via npx as an instant reliable fallback."""
+    global active_tunnel_url
+    if IS_CLOUD_PROD:
+        return None
+
+    try:
+        proc = subprocess.Popen(
+            ["npx", "-y", "localtunnel", "--port", "5000"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            shell=True,
+            bufsize=1,
+        )
+        start_t = time.time()
+        found_url = None
+        while time.time() - start_t < 15:
+            line = proc.stdout.readline()
+            if not line:
+                break
+            if "loca.lt" in line:
+                match = re.search(r"https://[a-zA-Z0-9-]+\.loca\.lt", line)
+                if match:
+                    found_url = match.group(0)
+                    active_tunnel_url = found_url
+                    print(f"[LOCALTUNNEL SUCCESS] {found_url}")
+                    update_env_base_url(found_url)
+                    threading.Thread(target=_drain_process_stdout, args=(proc,), daemon=True).start()
+                    return found_url
+        if not found_url:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+    except Exception as err:
+        print(f"[Localtunnel Error] {err}")
+
+    return None
+
+
+def ensure_tunnel() -> str:
+    """Master auto-tunnel initializer: Cloudflare -> localtunnel -> SSH -> BASE_URL fallback."""
+    global active_tunnel_url
     if IS_CLOUD_PROD:
         return os.getenv("BASE_URL", "")
+
+    if active_tunnel_url:
+        return active_tunnel_url
 
     cf_url = start_local_cloudflare_tunnel()
     if cf_url:
         return cf_url
 
+    lt_url = start_localtunnel()
+    if lt_url:
+        return lt_url
+
+    ssh_url = start_ssh_tunnel()
+    if ssh_url:
+        return ssh_url
+
     fallback = os.getenv("BASE_URL", "").strip().rstrip("/")
-    global active_tunnel_url
     active_tunnel_url = fallback
     return fallback
 
-BASE_URL = ensure_tunnel()
-twilio = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN) if (TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN) else None
+
+# Start tunnel asynchronously on local dev to prevent blocking Flask server boot
+if not IS_CLOUD_PROD and (os.environ.get("WERKZEUG_RUN_MAIN") == "true" or os.environ.get("FLASK_ENV") != "development"):
+    threading.Thread(target=ensure_tunnel, daemon=True).start()
+
+
 
 # =========================
-# STORAGE & SEED DATA
+# DATA STORAGE & HELPERS
 # =========================
-customers = [
-    {
-        "id": "c101",
-        "name": "Sarah Jenkins",
-        "phone": "+919057262630",
-        "status": "completed",
-        "feedback": ["The service was wonderful! Quick delivery and friendly staff.", "I would rate it 5 stars."],
-        "rating": 5,
-        "sentiment": "Positive",
-        "transcript": [
-            {"speaker": "ai", "text": "Hello! This is Sarah calling from Feedback Ops. How was your experience with our service?"},
-            {"speaker": "customer", "text": "The service was wonderful! Quick delivery and friendly staff."},
-            {"speaker": "ai", "text": "That is so great to hear! How many stars out of 5 would you give us?"},
-            {"speaker": "customer", "text": "I would rate it 5 stars."},
-            {"speaker": "ai", "text": "Thank you so much for your feedback! Have a lovely day. Goodbye."}
-        ],
-        "created_at": "2026-08-12 10:15",
-        "last_call": "10:17 AM"
-    },
-    {
-        "id": "c102",
-        "name": "David Miller",
-        "phone": "+19164356173",
-        "status": "pending",
-        "feedback": [],
-        "rating": None,
-        "sentiment": "Neutral",
-        "transcript": [],
-        "created_at": "2026-08-12 11:30",
-        "last_call": None
-    },
-    {
-        "id": "c103",
-        "name": "Priya Sharma",
-        "phone": "+919876543210",
-        "status": "pending",
-        "feedback": [],
-        "rating": None,
-        "sentiment": "Neutral",
-        "transcript": [],
-        "created_at": "2026-08-12 11:45",
-        "last_call": None
-    }
-]
+def get_initial_seed_data() -> List[Dict[str, Any]]:
+    """Returns initial seed customer records."""
+    return [
+        {
+            "id": "c101",
+            "name": "Vikas Kumar",
+            "phone": "+919057262630",
+            "status": "completed",
+            "feedback": [
+                "The service was wonderful! Quick delivery and friendly staff.",
+                "I would rate it 5 stars.",
+            ],
+            "rating": 5,
+            "sentiment": "Positive",
+            "transcript": [
+                {
+                    "speaker": "ai",
+                    "text": "Hello! This is Sarah calling from Feedback Ops. How was your experience with our service?",
+                },
+                {
+                    "speaker": "customer",
+                    "text": "The service was wonderful! Quick delivery and friendly staff.",
+                },
+                {
+                    "speaker": "ai",
+                    "text": "That is so great to hear! How many stars out of 5 would you give us?",
+                },
+                {"speaker": "customer", "text": "I would rate it 5 stars."},
+                {
+                    "speaker": "ai",
+                    "text": "Thank you so much for your feedback! Have a lovely day. Goodbye.",
+                },
+            ],
+            "created_at": time.strftime("%Y-%m-%d %H:%M"),
+            "last_call": "10:17 AM",
+        }
+    ]
 
-campaign_state = {
-    "running": False,
-    "current_id": None,
-    "last_dialed": None
-}
 
-def normalize_phone_number(phone):
-    """
-    Normalizes any phone number into standard E.164 format (+91XXXXXXXXXX or +1XXXXXXXXXX).
-    If no country code is provided and it's 10 digits (e.g. 9057262630), defaults to India (+91).
-    Handles spaces, dashes, leading zeros, missing '+' prefix.
-    """
+DB_FILE_PATH = os.path.join("/tmp" if IS_VERCEL else os.path.dirname(__file__), "customers_store.json")
+
+
+def load_customers_from_disk() -> List[Dict[str, Any]]:
+    """Loads customer dataset from JSON storage file or seed fallback."""
+    if os.path.exists(DB_FILE_PATH):
+        try:
+            with open(DB_FILE_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if isinstance(data, list) and len(data) > 0:
+                    return data
+        except Exception as e:
+            print(f"[Storage Load Error] {e}")
+    return get_initial_seed_data()
+
+
+def save_customers_to_disk() -> None:
+    """Saves active customer dataset to JSON storage file."""
+    try:
+        with open(DB_FILE_PATH, "w", encoding="utf-8") as f:
+            json.dump(customers, f, indent=2)
+    except Exception as e:
+        print(f"[Storage Save Error] {e}")
+
+
+customers: List[Dict[str, Any]] = load_customers_from_disk()
+
+
+def normalize_phone_number(phone: Any) -> str:
+    """Normalizes phone numbers to standard E.164 format (+91XXXXXXXXXX)."""
     if not phone:
         return ""
-    
     cleaned = re.sub(r"[^\d+]", "", str(phone).strip())
     if not cleaned:
         return ""
-        
     if cleaned.startswith("+"):
         return cleaned
-
     if cleaned.startswith("00"):
         return "+" + cleaned[2:]
-
     if cleaned.startswith("0") and len(cleaned) == 11:
         cleaned = cleaned[1:]
-
     if len(cleaned) == 10:
         return f"+91{cleaned}"
-    
     if len(cleaned) == 12 and cleaned.startswith("91"):
         return f"+{cleaned}"
-        
     return f"+{cleaned}"
 
-def find_customer(customer_id=None, phone=None):
+
+def find_customer(
+    customer_id: Optional[str] = None, phone: Optional[str] = None
+) -> Optional[Dict[str, Any]]:
+    """Searches customer records by ID or phone number."""
     if customer_id:
         c = next((item for item in customers if item["id"] == customer_id), None)
-        if c: return c
+        if c:
+            return c
     if phone:
         norm_phone = normalize_phone_number(phone)
         clean_target = re.sub(r"\D", "", str(phone))
@@ -344,24 +573,24 @@ def find_customer(customer_id=None, phone=None):
                 return item
     return None
 
-def generate_ai_response(customer_text, customer=None):
-    """Generates conversational response via Gemini API with smart intelligent fallback."""
+
+def generate_ai_response(customer_text: str, customer: Optional[Dict[str, Any]] = None) -> str:
+    """Generates conversational AI response via Gemini API with smart fallback."""
     ai_text = ""
     lower = customer_text.lower()
-    
     agent_name = get_active_agent_name()
+
     if gemini:
         try:
-            prompt = f"""
-You are {agent_name} calling from BCT Fibernet regarding internet service feedback.
-The customer said: "{customer_text}"
-
-Rules:
-1. Acknowledge their feedback about BCT Fibernet internet service naturally.
-2. If they haven't given a 1 to 5 star rating yet, ask for a star rating out of 5.
-3. Keep your reply super concise (maximum 15 words).
-4. Speak naturally without markdown or internal labels.
-"""
+            prompt = (
+                f"You are {agent_name} calling from BCT Fibernet regarding internet service feedback.\n"
+                f'The customer said: "{customer_text}"\n\n'
+                "Rules:\n"
+                "1. Acknowledge their feedback about BCT Fibernet internet service naturally.\n"
+                "2. If they haven't given a 1 to 5 star rating yet, ask for a star rating out of 5.\n"
+                "3. Keep your reply super concise (maximum 15 words).\n"
+                "4. Speak naturally without markdown or internal labels."
+            )
             res = gemini.models.generate_content(model=GEMINI_MODEL, contents=prompt)
             if res and res.text:
                 ai_text = res.text.strip()
@@ -371,8 +600,8 @@ Rules:
     if not ai_text:
         nums = re.findall(r"\b([1-5])\b", customer_text)
         rating_num = int(nums[0]) if nums else (customer.get("rating") if customer else None)
-        
         bye_words = ["bye", "goodbye", "thank you", "thanks", "that's all", "done", "no", "that is all"]
+
         if any(w in lower for w in bye_words):
             ai_text = "Thank you so much for your valuable feedback! Have a wonderful day. Goodbye!"
         elif rating_num:
@@ -389,26 +618,34 @@ Rules:
 
     return ai_text
 
+
 # =========================
-# FRONTEND & HEALTH
+# WEB ROUTES & ENDPOINTS
 # =========================
 @app.route("/")
 def index():
+    """Serves main dashboard SPA."""
     return render_template("index.html")
+
+
 
 @app.route("/api/health")
 def health():
+    """Returns application health and environment info."""
     env_name = "Render Production" if IS_RENDER else ("Vercel Production" if IS_VERCEL else "Local Development")
     return jsonify({
         "status": "ok",
         "engine": "Gemini 2.5 Flash + Twilio Voice",
         "active_voice": get_active_voice(),
         "environment": env_name,
-        "base_url": get_base_url()
+        "base_url": get_base_url(),
     })
+
+
 
 @app.route("/api/voices", methods=["GET", "POST"])
 def manage_voices():
+    """Fetches catalog or updates active AI voice."""
     global ACTIVE_VOICE
     if request.method == "POST":
         data = request.get_json(force=True, silent=True) or {}
@@ -417,101 +654,101 @@ def manage_voices():
         if not found:
             return jsonify({"success": False, "error": f"Voice ID '{voice_id}' not found in catalog"}), 400
         ACTIVE_VOICE = voice_id
-        print(f"[Voice Updated] Active voice set to: {ACTIVE_VOICE} ({found['name']})")
         return jsonify({"success": True, "active_voice": ACTIVE_VOICE, "voice_info": found})
 
-    return jsonify({
-        "success": True,
-        "active_voice": ACTIVE_VOICE,
-        "voices": VOICE_CATALOG
-    })
+    return jsonify({"success": True, "active_voice": ACTIVE_VOICE, "voices": VOICE_CATALOG})
+
+
 
 @app.route("/api/demo-audio", methods=["GET"])
 def stream_voice_demo():
+    """Streams sample audio voice preview."""
     voice_id = request.args.get("voice_id") or get_active_voice()
     v_info = next((v for v in VOICE_CATALOG if v["id"] == voice_id), VOICE_CATALOG[0])
     text = v_info.get("sample_text", "Hello! I am your AI Voice Assistant.")
     lang = "hi" if "IN" in voice_id and "Priya" in v_info["name"] else ("en-uk" if "GB" in voice_id else "en")
-    
+
     tts_url = f"https://translate.google.com/translate_tts?ie=UTF-8&tl={lang}&client=tw-ob&q={urllib.parse.quote(text)}"
     try:
         req = urllib.request.Request(tts_url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
         with urllib.request.urlopen(req, timeout=5) as resp:
-            audio_bytes = resp.read()
-            return Response(audio_bytes, mimetype="audio/mpeg")
+            return Response(resp.read(), mimetype="audio/mpeg")
     except Exception as e:
         print(f"[Demo Audio Stream Error] {e}")
         return jsonify({"error": "Failed to stream audio"}), 500
 
-# =========================
-# CUSTOMERS API
-# =========================
-@app.route("/api/customers", methods=["GET"])
-def get_customers():
+
+
+@app.route("/api/customers", methods=["GET", "POST"])
+def handle_customers():
+    """Lists all customers or creates a new customer task."""
+    if request.method == "POST":
+        data = request.get_json(force=True, silent=True) or {}
+        name = str(data.get("name", "")).strip()
+        raw_phone = str(data.get("phone", "")).strip()
+
+        if not name or not raw_phone:
+            return jsonify({"success": False, "error": "Name and phone number are required"}), 400
+
+        phone = normalize_phone_number(raw_phone)
+        existing = find_customer(phone=phone)
+        if existing:
+            return jsonify({"success": False, "error": f"Customer with phone {phone} already exists ({existing['name']})"}), 400
+
+        customer = {
+            "id": f"c{int(time.time() % 100000)}",
+            "name": name,
+            "phone": phone,
+            "status": "pending",
+            "feedback": [],
+            "rating": None,
+            "sentiment": "Neutral",
+            "transcript": [],
+            "created_at": time.strftime("%Y-%m-%d %H:%M"),
+            "last_call": None,
+        }
+        customers.append(customer)
+        save_customers_to_disk()
+        return jsonify({"success": True, "customer": customer}), 201
+
+    customers = load_customers_from_disk()
     return jsonify(customers)
 
-@app.route("/api/customers/<customer_id>", methods=["GET"])
-def get_customer_detail(customer_id):
-    c = find_customer(customer_id=customer_id)
-    if not c:
-        return jsonify({"success": False, "error": "Customer not found"}), 404
-    return jsonify({"success": True, "customer": c})
 
-@app.route("/api/customers", methods=["POST"])
-def add_customer():
-    data = request.get_json(force=True, silent=True) or {}
-    name = str(data.get("name", "")).strip()
-    raw_phone = str(data.get("phone", "")).strip()
 
-    if not name or not raw_phone:
-        return jsonify({"success": False, "error": "Name and phone number are required"}), 400
-
-    phone = normalize_phone_number(raw_phone)
-
-    existing = find_customer(phone=phone)
-    if existing:
-        return jsonify({"success": False, "error": f"Customer with phone {phone} already exists ({existing['name']})"}), 400
-
-    new_id = f"c{int(time.time() % 100000)}"
-    customer = {
-        "id": new_id,
-        "name": name,
-        "phone": phone,
-        "status": "pending",
-        "feedback": [],
-        "rating": None,
-        "sentiment": "Neutral",
-        "transcript": [],
-        "created_at": time.strftime("%Y-%m-%d %H:%M"),
-        "last_call": None
-    }
-    customers.append(customer)
-    return jsonify({"success": True, "customer": customer}), 201
-
-@app.route("/api/customers/<customer_id>", methods=["DELETE"])
-def delete_customer(customer_id):
+@app.route("/api/customers/<customer_id>", methods=["GET", "DELETE"])
+def handle_customer_by_id(customer_id):
+    """Retrieves or deletes a single customer record."""
     global customers
     c = find_customer(customer_id=customer_id)
     if not c:
         return jsonify({"success": False, "error": "Customer not found"}), 404
-    customers = [item for item in customers if item["id"] != customer_id]
-    return jsonify({"success": True, "message": "Customer deleted successfully"})
+
+    if request.method == "DELETE":
+        customers = [item for item in customers if item["id"] != customer_id]
+        save_customers_to_disk()
+        return jsonify({"success": True, "message": "Customer deleted successfully"})
+
+    return jsonify({"success": True, "customer": c})
+
+
 
 @app.route("/api/customers/<customer_id>/feedback", methods=["DELETE"])
 def delete_customer_feedback(customer_id):
+    """Clears feedback history for a specific customer."""
     c = find_customer(customer_id=customer_id)
     if not c:
         return jsonify({"success": False, "error": "Customer not found"}), 404
-    c["feedback"] = []
-    c["rating"] = None
-    c["sentiment"] = "Neutral"
-    c["transcript"] = []
-    if c["status"] == "completed":
+    c.update({"feedback": [], "rating": None, "sentiment": "Neutral", "transcript": []})
+    if c.get("status") == "completed":
         c["status"] = "pending"
+    save_customers_to_disk()
     return jsonify({"success": True, "message": "Customer feedback cleared successfully", "customer": c})
+
 
 @app.route("/api/seed", methods=["POST"])
 def reset_seed_data():
+    """Resets customer store back to initial sample dataset."""
     global customers
     customers.clear()
     customers.extend([
@@ -528,10 +765,10 @@ def reset_seed_data():
                 {"speaker": "customer", "text": "The service was wonderful! Quick delivery and friendly staff."},
                 {"speaker": "ai", "text": "That is so great to hear! How many stars out of 5 would you give us?"},
                 {"speaker": "customer", "text": "I would rate it 5 stars."},
-                {"speaker": "ai", "text": "Thank you so much for your feedback! Have a lovely day. Goodbye."}
+                {"speaker": "ai", "text": "Thank you so much for your feedback! Have a lovely day. Goodbye."},
             ],
             "created_at": time.strftime("%Y-%m-%d %H:%M"),
-            "last_call": "Recent"
+            "last_call": "Recent",
         },
         {
             "id": "c102",
@@ -543,7 +780,7 @@ def reset_seed_data():
             "sentiment": "Neutral",
             "transcript": [],
             "created_at": time.strftime("%Y-%m-%d %H:%M"),
-            "last_call": None
+            "last_call": None,
         },
         {
             "id": "c103",
@@ -555,16 +792,20 @@ def reset_seed_data():
             "sentiment": "Neutral",
             "transcript": [],
             "created_at": time.strftime("%Y-%m-%d %H:%M"),
-            "last_call": None
-        }
+            "last_call": None,
+        },
     ])
+    save_customers_to_disk()
     return jsonify({"success": True, "message": "Sample data reset successfully", "customers": customers})
 
+
+
 # =========================
-# MAKE CALL API
+# CALL CONTROL & TWILIO API
 # =========================
 @app.route("/api/call", methods=["POST"])
 def make_call():
+    """Triggers outbound AI voice feedback call."""
     data = request.get_json(force=True, silent=True) or {}
     customer_id = data.get("customer_id")
     phone = data.get("phone")
@@ -586,7 +827,7 @@ def make_call():
     voice_url = f"{base}/api/twilio/voice{cid_param}"
     status_url = f"{base}/api/twilio/status{cid_param}"
 
-    print(f"[Initiate Call] Dialing {target_phone} (raw: {raw_target}) via Voice URL: {voice_url}")
+    print(f"[Initiate Call] Dialing {target_phone} via Voice URL: {voice_url}")
 
     if not twilio:
         if customer:
@@ -594,7 +835,7 @@ def make_call():
         return jsonify({
             "success": True,
             "simulated": True,
-            "message": f"Twilio client not initialized with real SID/Token, simulated call status for {target_phone}."
+            "message": f"Twilio client not initialized with real SID/Token, simulated call status for {target_phone}.",
         })
 
     try:
@@ -605,7 +846,7 @@ def make_call():
             method="POST",
             status_callback=status_url,
             status_callback_method="POST",
-            status_callback_event=["initiated", "ringing", "answered", "completed"]
+            status_callback_event=["initiated", "ringing", "answered", "completed"],
         )
 
         if customer:
@@ -617,55 +858,52 @@ def make_call():
             "success": True,
             "call_id": call.sid,
             "status": call.status,
-            "message": f"AI call initiated to {customer['name'] if customer else target_phone}"
+            "message": f"AI call initiated to {customer['name'] if customer else target_phone}",
         })
-
     except Exception as e:
         print(f"[Call Exception] {e}")
         if customer:
             customer["status"] = "failed"
         return jsonify({"success": False, "error": str(e)}), 500
 
-# =========================
-# TWILIO VOICE WEBHOOK
-# =========================
+
 @app.route("/api/twilio/voice", methods=["POST", "GET"])
 def twilio_voice():
-    print("\n==========================================")
-    print(">>> TWILIO VOICE WEBHOOK CONNECTED")
-    print("==========================================")
-
+    """Initial TwiML entry point when call connects."""
     customer_id = request.args.get("customer_id")
     phone = request.args.get("phone") or request.form.get("To") or request.form.get("From")
     customer = find_customer(customer_id=customer_id, phone=phone)
 
     if customer:
         customer["status"] = "calling"
+        save_customers_to_disk()
 
     base = get_base_url()
     cid_param = f"?customer_id={customer['id']}" if customer else ""
     feedback_url = f"{base}/api/twilio/feedback{cid_param}"
 
     response = VoiceResponse()
-
     agent_name = get_active_agent_name()
-    c_name = customer['name'] if customer else ''
-    greeting_text = f"Hello {c_name}! I am {agent_name} from BCT Fibernet, calling for quick feedback on your internet service. How is your experience?"
-    
+    c_name = customer["name"] if customer else ""
+    greeting_text = (
+        f"Hello {c_name}! I am {agent_name} from BCT Fibernet, calling for quick feedback on your internet service. "
+        "How is your experience?"
+    )
+
     v = get_active_voice()
     response.say(greeting_text, voice=v)
 
     if customer:
         customer["transcript"] = [{"speaker": "ai", "text": greeting_text}]
+        save_customers_to_disk()
 
     gather = response.gather(
         input="speech",
         action=feedback_url,
         method="POST",
         speech_timeout="auto",
-        language="en-IN"
+        language="en-IN",
     )
-
     gather.say("How is your internet service experience?", voice=v)
 
     response.say("Thank you for your feedback! Goodbye.", voice=v)
@@ -673,26 +911,21 @@ def twilio_voice():
 
     return Response(str(response), status=200, content_type="text/xml")
 
-# =========================
-# TWILIO FEEDBACK WEBHOOK (AI CONVERSATION)
-# =========================
+
 @app.route("/api/twilio/feedback", methods=["POST"])
 def twilio_feedback():
-    print("\n>>> TWILIO FEEDBACK WEBHOOK HIT")
-
+    """Processes customer speech result and renders conversational response."""
     customer_id = request.args.get("customer_id")
     called_phone = request.form.get("To") or request.form.get("From")
     customer_text = request.form.get("SpeechResult", "").strip()
-
     customer = find_customer(customer_id=customer_id, phone=called_phone)
-    print(f"Customer: {customer['name'] if customer else 'Unknown'} | Said: {customer_text!r}")
 
     response = VoiceResponse()
     base = get_base_url()
     cid_param = f"?customer_id={customer['id']}" if customer else ""
     feedback_url = f"{base}/api/twilio/feedback{cid_param}"
-
     v = get_active_voice()
+
     if not customer_text:
         response.say("I didn't quite catch that. Could you please tell me about your experience?", voice=v)
         gather = response.gather(
@@ -700,25 +933,19 @@ def twilio_feedback():
             action=feedback_url,
             method="POST",
             speech_timeout="auto",
-            language="en-IN"
+            language="en-IN",
         )
         gather.say("I am listening.", voice=v)
         return Response(str(response), status=200, content_type="text/xml")
 
     if customer:
-        if not isinstance(customer.get("feedback"), list):
-            customer["feedback"] = []
-        customer["feedback"].append(customer_text)
-
-        if not isinstance(customer.get("transcript"), list):
-            customer["transcript"] = []
-        customer["transcript"].append({"speaker": "customer", "text": customer_text})
+        customer.setdefault("feedback", []).append(customer_text)
+        customer.setdefault("transcript", []).append({"speaker": "customer", "text": customer_text})
 
         if customer.get("rating") is None:
             nums = re.findall(r"\b([1-5])\b", customer_text)
             if nums:
                 customer["rating"] = int(nums[0])
-                print(f"[Rating Extracted]: {customer['rating']} stars")
 
         pos_words = ["good", "great", "excellent", "amazing", "wonderful", "awesome", "fast", "love", "nice", "5", "4"]
         neg_words = ["bad", "poor", "terrible", "horrible", "slow", "delay", "worst", "hate", "1", "2"]
@@ -731,15 +958,12 @@ def twilio_feedback():
             customer["sentiment"] = "Neutral"
 
     ai_text = generate_ai_response(customer_text, customer)
-    print(f"AI Response: {ai_text!r}")
-
     if customer:
-        customer["transcript"].append({"speaker": "ai", "text": ai_text})
+        customer.setdefault("transcript", []).append({"speaker": "ai", "text": ai_text})
 
     bye_keywords = ["bye", "goodbye", "thank you", "thanks", "that's all", "done", "no", "that is all"]
     is_closing = any(w in customer_text.lower() for w in bye_keywords)
 
-    v = get_active_voice()
     response.say(ai_text, voice=v)
 
     if is_closing or (customer and customer.get("rating") is not None and len(customer.get("feedback", [])) >= 2):
@@ -753,25 +977,24 @@ def twilio_feedback():
             action=feedback_url,
             method="POST",
             speech_timeout="auto",
-            language="en-IN"
+            language="en-IN",
         )
         gather.say("Is there anything else you would like to add?", voice=v)
         response.say("Thank you for your feedback! Goodbye.", voice=v)
         response.hangup()
 
+    if customer:
+        save_customers_to_disk()
+
     return Response(str(response), status=200, content_type="text/xml")
 
-# =========================
-# TWILIO CALL STATUS WEBHOOK
-# =========================
+
 @app.route("/api/twilio/status", methods=["POST"])
 def twilio_status():
+    """Webhook for Twilio call state transitions."""
     customer_id = request.args.get("customer_id")
-    call_sid = request.form.get("CallSid", "")
     call_status = request.form.get("CallStatus", "")
     phone = request.form.get("To", "") or request.form.get("From", "")
-
-    print(f"[STATUS CALLBACK] SID={call_sid} | Status={call_status} | Target={phone}")
 
     customer = find_customer(customer_id=customer_id, phone=phone)
     if customer:
@@ -781,8 +1004,10 @@ def twilio_status():
             customer["status"] = "failed"
         elif call_status in ("initiated", "ringing", "in-progress"):
             customer["status"] = "calling"
+        save_customers_to_disk()
 
     return Response("OK", status=200)
+
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 5000))

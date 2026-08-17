@@ -1,6 +1,6 @@
 import requests
 
-url = " https://6e33-103-137-84-230.ngrok-free.app/api/call"
+url = "https://6e33-103-137-84-230.ngrok-free.app/api/call"
 
 data = {
     "phone": "+919057262630",
